@@ -47,9 +47,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Hold Right ⌘ — Voice Input", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Tap Right ⌘ — Toggle History", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Tap Right ⌥ — Translate Selection", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Double-tap Right ⌥ — Screenshot", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "History...", action: #selector(openHistory), keyEquivalent: "h"))
+        menu.addItem(NSMenuItem(title: "History...", action: #selector(openHistory), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit Vox", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
@@ -101,6 +103,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         historyController.showHistory()
     }
 
+    private func toggleHistory() {
+        log("Right ⌘ tap → toggle History")
+        historyController.toggleHistory()
+    }
+
     @objc private func openSettings() {
         settingsController.showSettings()
     }
@@ -133,6 +140,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupKeyMonitor() {
         keyMonitor = KeyMonitor()
 
+        keyMonitor.onRightCmdTap = { [weak self] in
+            self?.toggleHistory()
+        }
         keyMonitor.onRightCmdDown = { [weak self] in
             self?.startRecording()
         }
@@ -141,6 +151,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         keyMonitor.onRightOptTap = { [weak self] in
             self?.translateSelection()
+        }
+        keyMonitor.onRightOptDoubleTap = { [weak self] in
+            self?.takeScreenshot()
         }
 
         keyMonitor.start()
@@ -191,6 +204,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     self.updateState(.ready)
                 }
+            }
+        }
+    }
+
+    // MARK: - Screenshot
+
+    private func takeScreenshot() {
+        DispatchQueue.main.async {
+            log("Taking screenshot to clipboard...")
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            process.arguments = ["-ic"]  // interactive selection → clipboard
+            do {
+                try process.run()
+            } catch {
+                log("Screenshot failed: \(error)")
             }
         }
     }
