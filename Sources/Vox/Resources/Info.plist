@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>com.voiceassistant.app</string>
+	<string>com.vox.app</string>
 	<key>CFBundleName</key>
-	<string>VoiceAssistant</string>
+	<string>Vox</string>
 	<key>CFBundleExecutable</key>
-	<string>VoiceAssistant</string>
+	<string>Vox</string>
 	<key>CFBundleVersion</key>
 	<string>1.0</string>
 	<key>CFBundleShortVersionString</key>
@@ -15,6 +15,6 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>VoiceAssistant needs microphone access to record your voice for transcription.</string>
+	<string>Vox needs microphone access to record your voice for transcription.</string>
 </dict>
 </plist>

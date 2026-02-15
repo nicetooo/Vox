@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "VoiceAssistant",
+            name: "Vox",
     platforms: [.macOS(.v14)],
     targets: [
         .target(
@@ -13,9 +13,9 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "VoiceAssistant",
+    name: "Vox",
             dependencies: ["CSQLite"],
-            path: "Sources/VoiceAssistant",
+            path: "Sources/Vox",
             linkerSettings: [
                 .linkedFramework("Carbon"),
                 .linkedFramework("ApplicationServices"),

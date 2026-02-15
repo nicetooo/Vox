@@ -2,7 +2,7 @@
 set -e
 
 # =============================================================================
-# VoiceAssistant Installer
+# Vox Installer
 # macOS menu bar app: voice-to-text + translation
 # Requires: Apple Silicon Mac, macOS 14+
 # =============================================================================
@@ -20,7 +20,7 @@ fail()  { echo -e "${RED}✗ $1${NC}"; exit 1; }
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║        VoiceAssistant Installer          ║"
+echo "║              Vox Installer               ║"
 echo "║   Voice → Text  |  Translate Selection   ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
@@ -30,7 +30,7 @@ echo ""
 
 # --- Check Apple Silicon ---
 if [[ "$(uname -m)" != "arm64" ]]; then
-    fail "VoiceAssistant requires Apple Silicon (M1/M2/M3/M4). MLX does not run on Intel Macs."
+    fail "Vox requires Apple Silicon (M1/M2/M3/M4). MLX does not run on Intel Macs."
 fi
 ok "Apple Silicon detected"
 
@@ -94,7 +94,6 @@ ok "Python packages installed"
 PY_BIN_DIR=$(dirname "$PYTHON")
 MLX_WHISPER="$PY_BIN_DIR/mlx_whisper"
 if [[ ! -x "$MLX_WHISPER" ]]; then
-    # Try pip show to find it
     MLX_WHISPER=$("$PYTHON" -c "import shutil; print(shutil.which('mlx_whisper') or '')" 2>/dev/null)
 fi
 if [[ -x "$MLX_WHISPER" ]]; then
@@ -107,18 +106,18 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Check if running from the cloned repo
-if [[ -f "$SCRIPT_DIR/Package.swift" && -d "$SCRIPT_DIR/Sources/VoiceAssistant" ]]; then
+if [[ -f "$SCRIPT_DIR/Package.swift" && -d "$SCRIPT_DIR/Sources/Vox" ]]; then
     INSTALL_DIR="$SCRIPT_DIR"
     ok "Building from current directory: $INSTALL_DIR"
 else
     # Clone the repo
-    INSTALL_DIR="$HOME/.local/share/VoiceAssistant"
+    INSTALL_DIR="$HOME/.local/share/Vox"
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         info "Updating existing installation..."
         cd "$INSTALL_DIR"
         git pull
     else
-        info "Cloning VoiceAssistant..."
+        info "Cloning Vox..."
         mkdir -p "$(dirname "$INSTALL_DIR")"
         git clone https://github.com/nicetooo/VoiceAssistant.git "$INSTALL_DIR"
     fi
@@ -127,28 +126,28 @@ fi
 cd "$INSTALL_DIR"
 
 # --- Build ---
-info "Building VoiceAssistant (this may take a moment)..."
+info "Building Vox (this may take a moment)..."
 swift build 2>&1 | tail -3
 ok "Build complete"
 
 # --- Create .app bundle ---
 info "Creating app bundle..."
-APP_DIR="build/VoiceAssistant.app"
+APP_DIR="build/Vox.app"
 mkdir -p "$APP_DIR/Contents/MacOS"
-cp .build/debug/VoiceAssistant "$APP_DIR/Contents/MacOS/VoiceAssistant"
-cp Sources/VoiceAssistant/Resources/Info.plist "$APP_DIR/Contents/Info.plist"
+cp .build/debug/Vox "$APP_DIR/Contents/MacOS/Vox"
+cp Sources/Vox/Resources/Info.plist "$APP_DIR/Contents/Info.plist"
 codesign --force --deep --sign - "$APP_DIR" 2>/dev/null
 ok "App bundle created"
 
 # --- Install to /Applications ---
 info "Installing to /Applications..."
-if [[ -d "/Applications/VoiceAssistant.app" ]]; then
-    rm -rf "/Applications/VoiceAssistant.app"
+if [[ -d "/Applications/Vox.app" ]]; then
+    rm -rf "/Applications/Vox.app"
 fi
-cp -R "$APP_DIR" "/Applications/VoiceAssistant.app"
+cp -R "$APP_DIR" "/Applications/Vox.app"
 # Remove quarantine flag so macOS doesn't block it
-xattr -cr "/Applications/VoiceAssistant.app" 2>/dev/null || true
-ok "Installed to /Applications/VoiceAssistant.app"
+xattr -cr "/Applications/Vox.app" 2>/dev/null || true
+ok "Installed to /Applications/Vox.app"
 
 # --- Done ---
 echo ""
@@ -159,17 +158,17 @@ echo ""
 echo -e "${YELLOW}IMPORTANT: Grant these permissions before first use:${NC}"
 echo ""
 echo "  1. System Settings → Privacy & Security → Accessibility"
-echo "     → Click '+' → Add VoiceAssistant from /Applications"
+echo "     → Click '+' → Add Vox from /Applications"
 echo ""
 echo "  2. System Settings → Privacy & Security → Input Monitoring"
-echo "     → Click '+' → Add VoiceAssistant from /Applications"
+echo "     → Click '+' → Add Vox from /Applications"
 echo ""
 echo "  3. System Settings → Privacy & Security → Microphone"
-echo "     → Allow VoiceAssistant"
+echo "     → Allow Vox"
 echo ""
 echo -e "${GREEN}Usage:${NC}"
 echo "  Hold Right ⌘ — Voice to text (push-to-talk)"
 echo "  Tap Right ⌥  — Translate selected text"
 echo ""
-echo -e "Launch: ${BLUE}open /Applications/VoiceAssistant.app${NC}"
+echo -e "Launch: ${BLUE}open /Applications/Vox.app${NC}"
 echo ""

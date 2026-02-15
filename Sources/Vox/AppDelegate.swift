@@ -52,7 +52,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "History...", action: #selector(openHistory), keyEquivalent: "h"))
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit VoiceAssistant", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit Vox", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
     }
 
@@ -62,12 +62,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem?.button else { return }
         switch state {
         case .ready:
-            button.image = NSImage(systemSymbolName: "mic", accessibilityDescription: "Ready")
+            button.image = makeWaveIcon(heights: [6, 12, 9], alpha: 1.0)
         case .recording:
-            button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Recording")
+            button.image = makeWaveIcon(heights: [10, 16, 13], alpha: 1.0)
         case .processing:
-            button.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "Processing")
+            button.image = makeWaveIcon(heights: [6, 12, 9], alpha: 0.5)
         }
+    }
+
+    /// Draw a custom waveform icon with 3 rounded bars of different heights.
+    /// Returns a template image that adapts to light/dark menu bar.
+    private func makeWaveIcon(heights: [CGFloat], alpha: CGFloat) -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
+            let barWidth: CGFloat = 3.0
+            let spacing: CGFloat = 2.5
+            let barCount = CGFloat(heights.count)
+            let totalWidth = barCount * barWidth + (barCount - 1) * spacing
+            let startX = (rect.width - totalWidth) / 2
+            let centerY = rect.height / 2
+
+            NSColor.black.withAlphaComponent(alpha).setFill()
+
+            for (i, height) in heights.enumerated() {
+                let x = startX + CGFloat(i) * (barWidth + spacing)
+                let y = centerY - height / 2
+                let barRect = NSRect(x: x, y: y, width: barWidth, height: height)
+                let path = NSBezierPath(roundedRect: barRect, xRadius: barWidth / 2, yRadius: barWidth / 2)
+                path.fill()
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     @objc private func openHistory() {

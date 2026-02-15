@@ -29,7 +29,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        w.title = "VoiceAssistant Settings"
+        w.title = "Vox Settings"
         w.delegate = self
         w.center()
         w.isReleasedWhenClosed = false
