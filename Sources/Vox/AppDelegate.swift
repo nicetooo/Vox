@@ -1,7 +1,13 @@
 import AppKit
 import ApplicationServices
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+// macOS IOKit API for Input Monitoring permission check
+// 0 = kIOHIDRequestTypeListenEvent
+// Returns: 0 = granted, 1 = denied
+@_silgen_name("IOHIDCheckAccess")
+private func IOHIDCheckAccess(_ requestType: Int32) -> Int32
+
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var keyMonitor: KeyMonitor!
     private var audioRecorder: AudioRecorder!
@@ -41,11 +47,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Menu Bar
 
+    // Tag IDs for dynamic permission menu items
+    private let permissionSectionTag = 9000
+
     private func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         updateState(.ready)
 
         let menu = NSMenu()
+        menu.delegate = self
         menu.addItem(NSMenuItem(title: "Hold Right ⌘ — Voice Input", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Tap Right ⌘ — Toggle History", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Tap Right ⌥ — Translate Selection", action: nil, keyEquivalent: ""))
@@ -56,6 +66,60 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit Vox", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    // MARK: - Dynamic Menu (permission status)
+
+    func menuWillOpen(_ menu: NSMenu) {
+        // Remove old permission items
+        while let item = menu.items.first(where: { $0.tag == permissionSectionTag }) {
+            menu.removeItem(item)
+        }
+
+        // Check permissions reliably
+        let accessibilityOK = AXIsProcessTrusted()
+        let inputMonitoringOK = IOHIDCheckAccess(0) == 0  // 0 = granted
+
+        var issues: [(String, Selector)] = []
+
+        if !accessibilityOK {
+            issues.append(("⚠ 需要辅助功能权限 — 点击打开设置", #selector(openAccessibilitySettings)))
+        }
+        if !inputMonitoringOK {
+            issues.append(("⚠ 需要输入监控权限 — 点击打开设置", #selector(openInputMonitoringSettings)))
+        }
+
+        if !issues.isEmpty {
+            for (i, (title, action)) in issues.enumerated() {
+                let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+                item.target = self
+                item.tag = permissionSectionTag
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .foregroundColor: NSColor.systemOrange,
+                    .font: NSFont.systemFont(ofSize: 13, weight: .medium)
+                ]
+                item.attributedTitle = NSAttributedString(string: title, attributes: attrs)
+                menu.insertItem(item, at: i)
+            }
+            let sep = NSMenuItem.separator()
+            sep.tag = permissionSectionTag
+            menu.insertItem(sep, at: issues.count)
+        }
+    }
+
+    @objc private func openAccessibilitySettings() {
+        openSystemSettings("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    }
+
+    @objc private func openInputMonitoringSettings() {
+        openSystemSettings("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+    }
+
+    private func openSystemSettings(_ urlString: String) {
+        if let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
+            log("Opened System Settings: \(urlString)")
+        }
     }
 
     enum State { case ready, recording, processing }

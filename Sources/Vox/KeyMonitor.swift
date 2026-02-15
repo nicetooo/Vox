@@ -37,6 +37,10 @@ class KeyMonitor {
     private let holdThreshold: TimeInterval = 0.3   // start recording after this
     private let doubleTapWindow: TimeInterval = 0.3 // double-tap if two taps within this
 
+    // Permission detection: set to true once any event arrives
+    private(set) var hasReceivedEvent = false
+    let startTime = Date()
+
     fileprivate var eventTap: CFMachPort?
 
     func start() {
@@ -73,6 +77,11 @@ class KeyMonitor {
     }
 
     fileprivate func handleEvent(type: CGEventType, event: CGEvent) {
+        if !hasReceivedEvent {
+            hasReceivedEvent = true
+            log("KeyMonitor: first event received — Input Monitoring OK")
+        }
+
         if type == .flagsChanged {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             let flags = event.flags.rawValue
@@ -174,12 +183,14 @@ private func keyMonitorCallback(
     event: CGEvent,
     refcon: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
-    // Handle tap being disabled by the system (e.g. timeout)
+    // Handle tap being disabled by the system (e.g. timeout or permission change)
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        log("KeyMonitor: event tap disabled by system (\(type == .tapDisabledByTimeout ? "timeout" : "userInput")), re-enabling...")
         if let refcon = refcon {
             let monitor = Unmanaged<KeyMonitor>.fromOpaque(refcon).takeUnretainedValue()
             if let tap = monitor.eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
+                log("KeyMonitor: event tap re-enabled")
             }
         }
         return Unmanaged.passUnretained(event)

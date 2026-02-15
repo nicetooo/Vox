@@ -74,6 +74,18 @@ class WhisperService {
         process.executableURL = URL(fileURLWithPath: whisperPath)
         process.arguments = args
 
+        // GUI apps have minimal PATH — add common locations so mlx_whisper can find ffmpeg
+        var env = ProcessInfo.processInfo.environment
+        let extraPaths = [
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/Library/Frameworks/Python.framework/Versions/Current/bin",
+        ]
+        let currentPath = env["PATH"] ?? "/usr/bin:/bin"
+        env["PATH"] = (extraPaths + [currentPath]).joined(separator: ":")
+        process.environment = env
+
         let stderrPipe = Pipe()
         process.standardOutput = FileHandle.nullDevice
         process.standardError = stderrPipe
