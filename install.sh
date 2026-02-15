@@ -120,7 +120,7 @@ else
     else
         info "Cloning VoiceAssistant..."
         mkdir -p "$(dirname "$INSTALL_DIR")"
-        git clone https://github.com/nicekate/VoiceAssistant.git "$INSTALL_DIR"
+        git clone https://github.com/nicetooo/VoiceAssistant.git "$INSTALL_DIR"
     fi
 fi
 
