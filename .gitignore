@@ -1,0 +1,18 @@
+# Build artifacts
+.build/
+build/
+
+# macOS
+.DS_Store
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+
+# Local docs (session logs, plans, etc.)
+docs/
+
+# Editor
+*.swp
+*~
