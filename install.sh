@@ -119,7 +119,7 @@ else
     else
         info "Cloning Vox..."
         mkdir -p "$(dirname "$INSTALL_DIR")"
-        git clone https://github.com/nicetooo/VoiceAssistant.git "$INSTALL_DIR"
+        git clone https://github.com/nicetooo/Vox.git "$INSTALL_DIR"
     fi
 fi
 
