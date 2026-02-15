@@ -133,9 +133,10 @@ ok "Build complete"
 # --- Create .app bundle ---
 info "Creating app bundle..."
 APP_DIR="build/Vox.app"
-mkdir -p "$APP_DIR/Contents/MacOS"
+mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp .build/debug/Vox "$APP_DIR/Contents/MacOS/Vox"
 cp Sources/Vox/Resources/Info.plist "$APP_DIR/Contents/Info.plist"
+cp Sources/Vox/Resources/Vox.icns "$APP_DIR/Contents/Resources/Vox.icns"
 codesign --force --deep --sign - "$APP_DIR" 2>/dev/null
 ok "App bundle created"
 
