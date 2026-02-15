@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 // MARK: - Settings Window Controller
 
@@ -14,6 +15,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
     private var progressBar: NSProgressIndicator?
     private var silenceValueLabel: NSTextField?
     private var durationValueLabel: NSTextField?
+    private var loginCheckbox: NSButton?
     private var isDownloading = false
 
     func showSettings() {
@@ -104,6 +106,17 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         )
         stack.addArrangedSubview(durationRow.row)
         self.durationValueLabel = durationRow.valueLabel
+
+        stack.addArrangedSubview(makeSeparator())
+
+        // === Launch at Login ===
+        stack.addArrangedSubview(makeHeader("General"))
+        let loginCb = NSButton(checkboxWithTitle: "Launch at Login", target: self, action: #selector(loginToggled(_:)))
+        loginCb.font = NSFont.systemFont(ofSize: 13)
+        loginCb.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
+        self.loginCheckbox = loginCb
+        stack.addArrangedSubview(loginCb)
+        stack.addArrangedSubview(makeNote("Start Vox automatically when you log in. App must be in /Applications."))
 
         return container
     }
@@ -393,6 +406,22 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
             downloadStatus?.stringValue = "✗ Failed to delete."
         }
         refreshModelList()
+    }
+
+    @objc private func loginToggled(_ sender: NSButton) {
+        do {
+            if sender.state == .on {
+                try SMAppService.mainApp.register()
+                log("Settings: Launch at Login enabled")
+            } else {
+                try SMAppService.mainApp.unregister()
+                log("Settings: Launch at Login disabled")
+            }
+        } catch {
+            log("Settings: Launch at Login failed: \(error)")
+            // Revert checkbox to actual state
+            sender.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
+        }
     }
 
     @objc private func silenceChanged(_ sender: NSSlider) {

@@ -1,0 +1,50 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14  # Apple Silicon (M1)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Release)
+        run: swift build -c release
+
+      - name: Create .app bundle
+        run: |
+          mkdir -p Vox.app/Contents/MacOS
+          mkdir -p Vox.app/Contents/Resources
+          cp .build/release/Vox Vox.app/Contents/MacOS/Vox
+          cp Sources/Vox/Resources/Info.plist Vox.app/Contents/Info.plist
+          cp Sources/Vox/Resources/Vox.icns Vox.app/Contents/Resources/Vox.icns
+          codesign --force --deep --sign - Vox.app
+
+      - name: Zip app
+        run: ditto -c -k --keepParent Vox.app Vox.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vox.app
+          path: Vox.zip
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Vox.zip
+          body: |
+            ## Install
+
+            1. Download `Vox.zip` and extract
+            2. Move `Vox.app` to `/Applications/`
+            3. Remove quarantine: `xattr -cr /Applications/Vox.app`
+            4. Install Python dependencies: `pip install mlx-whisper huggingface_hub`
+            5. Grant permissions (Accessibility + Input Monitoring + Microphone) in System Settings
+            6. Launch from Spotlight or `/Applications/Vox.app`
+
+            **Requires:** Apple Silicon Mac, macOS 14+, Python 3.9+
