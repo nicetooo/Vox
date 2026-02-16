@@ -1,6 +1,6 @@
 # Vox
 
-macOS menu bar app for voice-to-text and instant translation. Runs entirely on-device using [MLX Whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) — no cloud APIs, no subscriptions.
+macOS menu bar app for voice-to-text and instant translation. Runs entirely on-device using [WhisperKit](https://github.com/argmaxinc/WhisperKit) (pure Swift + CoreML) — no cloud APIs, no subscriptions, no Python, no external dependencies.
 
 ## What it does
 
@@ -12,40 +12,33 @@ macOS menu bar app for voice-to-text and instant translation. Runs entirely on-d
 | **Double-tap Right ⌥** | Screenshot selection → clipboard |
 
 - **Voice input**: Hold the key, speak, release. Text is pasted wherever your cursor is.
-- **Translation**: Select any text in any app, tap the key. A floating overlay shows the translation near your cursor.
+- **Translation**: Select any text in any app, tap the key. A floating overlay shows the translation.
 - **History**: All voice inputs and translations are saved locally (SQLite). Search, filter by date, copy, delete.
 - **Screenshot**: Double-tap triggers macOS interactive screenshot tool, result goes to clipboard.
 
 ## Requirements
 
-- Apple Silicon Mac (M1/M2/M3/M4) — MLX does not support Intel
+- Apple Silicon Mac (M1/M2/M3/M4)
 - macOS 14 (Sonoma) or later
-- Python 3.9+ with `mlx-whisper` and `huggingface_hub` packages
-- ~1.6 GB disk space for the default Whisper model
+- That's it — no Python, no pip, no ffmpeg, no brew
 
 ## Install
 
-**One-liner:**
+**From release (recommended):**
 
-```bash
-git clone https://github.com/nicetooo/Vox.git && cd Vox && ./install.sh
-```
+Download `Vox.app.zip` from [Releases](https://github.com/nicetooo/Vox/releases), unzip, drag to `/Applications`.
 
-The install script handles everything: checks your environment, installs Python dependencies, builds from source, copies to `/Applications/Vox.app`.
-
-**Manual build:**
+**Build from source:**
 
 ```bash
 git clone https://github.com/nicetooo/Vox.git
 cd Vox
-pip install mlx-whisper huggingface_hub
-swift build
-# Create .app bundle
+swift build -c release
 mkdir -p build/Vox.app/Contents/{MacOS,Resources}
-cp .build/debug/Vox build/Vox.app/Contents/MacOS/
+cp .build/release/Vox build/Vox.app/Contents/MacOS/
 cp Sources/Vox/Resources/Info.plist build/Vox.app/Contents/
 cp Sources/Vox/Resources/Vox.icns build/Vox.app/Contents/Resources/
-codesign --force --deep --sign - build/Vox.app
+codesign --force --sign - build/Vox.app
 open build/Vox.app
 ```
 
@@ -57,20 +50,34 @@ Vox needs three macOS permissions (System Settings → Privacy & Security):
 2. **Input Monitoring** — to detect Right ⌘ and Right ⌥ key events
 3. **Microphone** — to record audio for voice input
 
-> Note: Every rebuild produces a new binary with a different code signature. You'll need to re-grant Accessibility and Input Monitoring permissions after each rebuild.
+The menu bar icon shows orange warnings if permissions are missing — click them to jump to the right settings page.
+
+> Note: Every rebuild produces a new binary with a different code signature. You'll need to toggle Accessibility and Input Monitoring permissions off/on after each rebuild.
 
 ## Settings
 
 Click the waveform icon in the menu bar → Settings:
 
 - **Languages**: Select which languages you speak. If only one is selected, Whisper is forced to that language (best accuracy). With multiple, it auto-detects and verifies the result.
-- **Whisper Model**: Download and switch between models. Default is `large-v3-turbo` (1.6 GB, good balance of speed and accuracy).
+- **Whisper Model**: Download and switch between models. Default is `large-v3` (best quality). Models are stored in `~/Library/Application Support/Vox/Models/`.
 - **Silence Filter**: Adjust microphone sensitivity and minimum recording duration to prevent Whisper hallucination on silent/short recordings.
+
+### Available models
+
+| Model | Size | Notes |
+|-------|------|-------|
+| large-v3 | ~3 GB | Best quality (default) |
+| large-v2 | ~3 GB | Previous best |
+| distil-large-v3 | ~1.5 GB | Fast + good quality |
+| medium | ~1.5 GB | Balanced |
+| small | ~500 MB | Lightweight |
+| base | ~150 MB | Minimal |
+| tiny | ~80 MB | Fastest, lowest quality |
 
 ## How it works
 
-- **Speech recognition**: Records audio via `AVAudioEngine`, transcribes with `mlx_whisper` CLI (runs locally on Apple Silicon GPU via MLX). Merges multi-line output, optionally converts between simplified/traditional Chinese.
-- **Language verification**: When multiple languages are selected, Whisper auto-detects. If the result language doesn't match your selected set (e.g., Whisper outputs Korean but you only selected Chinese + English), it automatically retries with a forced language.
+- **Speech recognition**: Records audio via `AVAudioEngine`, transcribes with WhisperKit (CoreML, runs locally on Apple Silicon GPU). Model preloads at app startup for instant transcription. Merges multi-line output, optionally converts between simplified/traditional Chinese.
+- **Language verification**: When multiple languages are selected, Whisper auto-detects. If the result language doesn't match your selected set, it automatically retries with a forced language.
 - **Translation**: Uses `NLLanguageRecognizer` for language detection + Google Translate free endpoint. Result shown in a floating dark overlay with a copy button.
 - **History**: SQLite database at `~/Library/Application Support/Vox/history.sqlite`. Search, date filtering (Today / 7 days / 30 days), expandable rows.
 - **Hotkeys**: Global `CGEventTap` monitors Right ⌘ and Right ⌥. No modifier key conflicts since these specific right-side keys are rarely used.
@@ -85,14 +92,14 @@ Sources/
     ├── AppDelegate.swift       # Menu bar, coordinates all services
     ├── KeyMonitor.swift        # CGEventTap hotkey detection
     ├── AudioRecorder.swift     # AVAudioEngine recording + audio levels
-    ├── WhisperService.swift    # mlx_whisper subprocess + language verification
+    ├── WhisperService.swift    # WhisperKit transcription + language verification
     ├── TranslationService.swift # NLLanguageRecognizer + Google Translate
     ├── SystemIntegration.swift # Cmd+C/V simulation, clipboard
     ├── RecordingOverlay.swift  # Floating waveform animation during recording
     ├── TranslationOverlay.swift # Floating panel with translation result
     ├── HistoryStore.swift      # SQLite CRUD operations
     ├── HistoryWindow.swift     # Dark floating history panel
-    ├── Settings.swift          # UserDefaults, model management, Python discovery
+    ├── Settings.swift          # UserDefaults, WhisperKit model management
     └── SettingsWindow.swift    # Settings UI
 ```
 
@@ -100,11 +107,13 @@ Sources/
 
 **"Failed to create event tap"** — Grant Input Monitoring permission and restart the app.
 
-**Voice input produces no text** — Check that `mlx_whisper` is installed (`which mlx_whisper`). The app auto-discovers it from common Python install locations.
+**Voice input produces no text** — Check the menu bar for orange permission warnings. Ensure the model is downloaded in Settings.
 
-**First transcription is slow** — The Whisper model needs to be downloaded on first use. Open Settings → Whisper Model → Download. Subsequent runs use the cached model.
+**First launch is slow** — CoreML compiles the model for your hardware on first use. This is a one-time process; subsequent launches load from cache.
 
-**Chinese text comes out as traditional** — In Settings, select "简体中文 (Simplified)" only (not both). The app will auto-convert Whisper's output to simplified Chinese.
+**"Loading model..." when recording** — The model is still loading in the background. Wait a moment and try again.
+
+**Chinese text comes out as traditional** — In Settings, select "简体中文 (Simplified)" only (not both). The app will auto-convert output to simplified Chinese.
 
 ## License
 
