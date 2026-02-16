@@ -2,8 +2,11 @@
 import PackageDescription
 
 let package = Package(
-            name: "Vox",
+    name: "Vox",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0"),
+    ],
     targets: [
         .target(
             name: "CSQLite",
@@ -13,8 +16,11 @@ let package = Package(
             ]
         ),
         .executableTarget(
-    name: "Vox",
-            dependencies: ["CSQLite"],
+            name: "Vox",
+            dependencies: [
+                "CSQLite",
+                .product(name: "WhisperKit", package: "WhisperKit"),
+            ],
             path: "Sources/Vox",
             linkerSettings: [
                 .linkedFramework("Carbon"),

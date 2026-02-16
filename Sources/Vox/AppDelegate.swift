@@ -31,6 +31,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         log("Services ready")
         setupKeyMonitor()
         log("Ready. Hold Right ⌘ to record, tap Right ⌥ to translate.")
+        preloadModel()
+    }
+
+    // MARK: - Model Preload
+
+    private func preloadModel() {
+        let model = Settings.shared.whisperModel
+        log("Preloading model '\(model)' at startup...")
+        let whisper = self.whisperService!
+        Task.detached {
+            let success = await whisper.loadModel(model)
+            await MainActor.run {
+                if success {
+                    log("Model '\(model)' ready.")
+                } else {
+                    log("Failed to preload model '\(model)'.")
+                }
+            }
+        }
     }
 
     // MARK: - Accessibility Check
@@ -197,6 +216,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.recordingOverlay.updateLevel(level)
             }
         }
+
+
     }
 
     // MARK: - Key Monitor
@@ -231,7 +252,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.async {
             self.updateState(.recording)
             NSSound(named: "Tink")?.play()
-            self.recordingOverlay.show()
+            // If model not ready, show loading message; otherwise show waveform
+            if self.whisperService.isLoading || !self.whisperService.isModelReady {
+                log("Model not ready, showing loading message...")
+                self.recordingOverlay.showMessage("Loading model...")
+            } else {
+                self.recordingOverlay.show()
+            }
             self.audioRecorder.startRecording()
             log("Recording...")
         }
@@ -256,12 +283,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.updateState(.processing)
             log("Transcribing...")
 
-            DispatchQueue.global(qos: .userInitiated).async {
-                let text = self.whisperService.transcribe(audioPath: self.audioRecorder.outputPath)
-                DispatchQueue.main.async {
+            let audioPath = self.audioRecorder.outputPath
+            let whisper = self.whisperService!
+            let integration = self.systemIntegration!
+
+            // If model still not ready by the time recording ends, keep showing loading message
+            if whisper.isLoading || !whisper.isModelReady {
+                log("Model not ready yet, keeping loading message...")
+                self.recordingOverlay.showMessage("Loading model...")
+            }
+
+            Task.detached {
+                // Wait for model to be ready (if preloading is still in progress)
+                while whisper.isLoading {
+                    try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                }
+                // If model still not ready after preload, try loading now
+                if !whisper.isModelReady {
+                    let model = Settings.shared.whisperModel
+                    log("Model not loaded, loading '\(model)' now...")
+                    _ = await whisper.loadModel(model)
+                }
+
+                let text = await whisper.transcribe(audioPath: audioPath)
+                await MainActor.run {
+                    self.recordingOverlay.hide()
                     if let text = text, !text.isEmpty {
                         log("Result: \(text)")
-                        self.systemIntegration.pasteText(text)
+                        integration.pasteText(text)
                         HistoryStore.shared.addVoice(text: text)
                     } else {
                         log("No speech detected.")

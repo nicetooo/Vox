@@ -1,9 +1,10 @@
 import Foundation
+import WhisperKit
 
 // MARK: - Model Info
 
 struct WhisperModelInfo {
-    let name: String         // HuggingFace repo name
+    let name: String         // WhisperKit model variant name
     let displayName: String  // User-friendly name
     let size: String         // Approximate download size
 }
@@ -14,16 +15,16 @@ class Settings {
     static let shared = Settings()
     private let defaults = UserDefaults.standard
 
-    // MARK: - Popular Whisper Models
+    // MARK: - Popular Whisper Models (WhisperKit CoreML format)
 
     static let popularModels: [WhisperModelInfo] = [
-        WhisperModelInfo(name: "mlx-community/whisper-large-v3-turbo", displayName: "Large V3 Turbo (recommended)", size: "1.6 GB"),
-        WhisperModelInfo(name: "mlx-community/whisper-large-v3-mlx", displayName: "Large V3 (best quality)", size: "3.1 GB"),
-        WhisperModelInfo(name: "mlx-community/whisper-medium-mlx", displayName: "Medium", size: "1.5 GB"),
-        WhisperModelInfo(name: "mlx-community/whisper-small-mlx", displayName: "Small", size: "460 MB"),
-        WhisperModelInfo(name: "mlx-community/whisper-base-mlx", displayName: "Base", size: "140 MB"),
-        WhisperModelInfo(name: "mlx-community/whisper-tiny", displayName: "Tiny (fastest)", size: "75 MB"),
-        WhisperModelInfo(name: "mlx-community/distil-whisper-large-v3", displayName: "Distil Large V3 (fast+good)", size: "1.5 GB"),
+        WhisperModelInfo(name: "large-v3", displayName: "Large V3 (best quality)", size: "~3 GB"),
+        WhisperModelInfo(name: "large-v2", displayName: "Large V2", size: "~3 GB"),
+        WhisperModelInfo(name: "distil-large-v3", displayName: "Distil Large V3 (fast+good)", size: "~1.5 GB"),
+        WhisperModelInfo(name: "medium", displayName: "Medium", size: "~1.5 GB"),
+        WhisperModelInfo(name: "small", displayName: "Small", size: "~500 MB"),
+        WhisperModelInfo(name: "base", displayName: "Base", size: "~150 MB"),
+        WhisperModelInfo(name: "tiny", displayName: "Tiny (fastest)", size: "~80 MB"),
     ]
 
     // MARK: - Available Languages
@@ -62,10 +63,8 @@ class Settings {
     ]
 
     /// Single language arg for Whisper, or nil for auto-detect.
-    /// zh-Hans and zh-Hant both map to "zh" for Whisper.
     var whisperLanguageArg: String? {
         let langs = selectedLanguages
-        // Map to Whisper codes and deduplicate
         let whisperLangs = Set(langs.map { Settings.whisperLangMap[$0] ?? $0 })
         return whisperLangs.count == 1 ? whisperLangs.first : nil
     }
@@ -85,7 +84,18 @@ class Settings {
     // MARK: - Model Settings
 
     var whisperModel: String {
-        get { defaults.string(forKey: "whisperModel") ?? "mlx-community/whisper-large-v3-turbo" }
+        get {
+            let stored = defaults.string(forKey: "whisperModel") ?? ""
+            // Migrate from old mlx-community format or empty
+            if stored.contains("mlx-community") || stored.isEmpty {
+                return "large-v3"
+            }
+            // Remove large-v3-turbo (not available in WhisperKit)
+            if stored == "large-v3-turbo" {
+                return "large-v3"
+            }
+            return stored
+        }
         set { defaults.set(newValue, forKey: "whisperModel") }
     }
 
@@ -107,264 +117,140 @@ class Settings {
         set { defaults.set(newValue, forKey: "minRecordingDuration") }
     }
 
-    // MARK: - Model Cache Management
+    // MARK: - WhisperKit Model Management
 
-    // MARK: - Python Path Discovery
-
-    /// Find python3 binary by checking common install locations
-    static let pythonPath: String = {
-        let candidates = [
-            "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
-            "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
-            "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",
-            "/opt/homebrew/bin/python3",
-            "/usr/local/bin/python3",
-            "/usr/bin/python3",
-        ]
-        let found = candidates.first { FileManager.default.fileExists(atPath: $0) }
-        if let found = found {
-            log("Python found: \(found)")
-        } else {
-            log("WARNING: Python not found in any known location!")
-        }
-        return found ?? "/usr/bin/python3"
+    /// Model storage directory — ~/Library/Application Support/Vox/Models/
+    /// NOT ~/Documents (macOS privacy restricted)
+    static let modelStorageDir: URL = {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("Vox/Models")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        log("Model storage: \(dir.path)")
+        return dir
     }()
 
-    /// Find mlx_whisper binary — look in same bin dir as python3, then common locations
-    static let mlxWhisperPath: String = {
-        // First: check same directory as python3
-        let pythonBinDir = (pythonPath as NSString).deletingLastPathComponent
-        let sameDirPath = pythonBinDir + "/mlx_whisper"
-        if FileManager.default.fileExists(atPath: sameDirPath) {
-            log("mlx_whisper found: \(sameDirPath)")
-            return sameDirPath
-        }
-        // Fallback: check common locations
-        let candidates = [
-            "/Library/Frameworks/Python.framework/Versions/3.13/bin/mlx_whisper",
-            "/Library/Frameworks/Python.framework/Versions/3.12/bin/mlx_whisper",
-            "/opt/homebrew/bin/mlx_whisper",
-            "/usr/local/bin/mlx_whisper",
-        ]
-        let found = candidates.first { FileManager.default.fileExists(atPath: $0) }
-        if let found = found {
-            log("mlx_whisper found: \(found)")
-        } else {
-            log("WARNING: mlx_whisper not found! Voice input won't work.")
-        }
-        return found ?? "/usr/local/bin/mlx_whisper"
-    }()
-
-    /// Scan HuggingFace cache for downloaded whisper models
+    /// Scan modelStorageDir for downloaded model variant folders.
+    /// WhisperKit downloads into: modelStorageDir/models/argmaxinc/whisperkit-coreml/<variant>/
     static func cachedModelNames() -> Set<String> {
-        let cacheDir = NSHomeDirectory() + "/.cache/huggingface/hub"
         let fm = FileManager.default
-        guard let entries = try? fm.contentsOfDirectory(atPath: cacheDir) else { return [] }
+        let repoDir = modelStorageDir
+            .appendingPathComponent("models/argmaxinc/whisperkit-coreml")
 
         var models = Set<String>()
+        guard let entries = try? fm.contentsOfDirectory(atPath: repoDir.path) else { return models }
+
         for entry in entries {
-            guard entry.hasPrefix("models--") else { continue }
-            let cleaned = entry.replacingOccurrences(of: "models--", with: "")
-            let name = cleaned.replacingOccurrences(of: "--", with: "/")
-            // Only include whisper models
-            if name.lowercased().contains("whisper") {
-                models.insert(name)
+            let dirPath = repoDir.appendingPathComponent(entry)
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: dirPath.path, isDirectory: &isDir), isDir.boolValue else { continue }
+
+            // Check it contains CoreML model files
+            if let contents = try? fm.contentsOfDirectory(atPath: dirPath.path),
+               contents.contains(where: { $0.hasSuffix(".mlmodelc") || $0 == "config.json" }) {
+                // Extract variant: "openai_whisper-large-v3-turbo" → "large-v3-turbo"
+                let variant = entry
+                    .replacingOccurrences(of: "openai_whisper-", with: "")
+                    .replacingOccurrences(of: "distil-whisper_distil-", with: "distil-")
+                models.insert(variant)
             }
         }
         return models
     }
 
-    /// Download progress info
-    struct DownloadProgress {
-        let percent: Double    // 0.0 - 1.0
-        let fileName: String
-        let message: String
+    /// Get the local folder path for a downloaded model variant (or nil)
+    static func modelFolder(for variant: String) -> String? {
+        let fm = FileManager.default
+        let repoDir = modelStorageDir
+            .appendingPathComponent("models/argmaxinc/whisperkit-coreml")
+
+        guard let entries = try? fm.contentsOfDirectory(atPath: repoDir.path) else { return nil }
+        for entry in entries {
+            let extracted = entry
+                .replacingOccurrences(of: "openai_whisper-", with: "")
+                .replacingOccurrences(of: "distil-whisper_distil-", with: "distil-")
+            if extracted == variant {
+                return repoDir.appendingPathComponent(entry).path
+            }
+        }
+        return nil
     }
 
-    /// Download a model from HuggingFace in background, reporting real byte-level progress
-    static func downloadModel(_ modelName: String, onProgress: @escaping (DownloadProgress) -> Void, onComplete: @escaping (Bool) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: Settings.pythonPath)
-            process.arguments = [
-                "-c",
-                """
-                import sys, os, time
+    /// Download a WhisperKit model with progress reporting
+    static func downloadModel(_ variant: String, onProgress: @escaping (DownloadProgress) -> Void, onComplete: @escaping (Bool) -> Void) {
+        Task {
+            do {
+                log("Downloading model '\(variant)' to \(modelStorageDir.path)")
+                DispatchQueue.main.async {
+                    onProgress(DownloadProgress(percent: 0.0, fileName: variant, message: "Downloading \(variant)..."))
+                }
 
-                # === Monkeypatch tqdm BEFORE importing huggingface_hub ===
-                # This lets us capture real byte-level download progress
-                _completed = [0]       # bytes of fully downloaded files
-                _total_bytes = [0]     # total model size
-                _total_str = ['']      # formatted total size string
-                _cur_file = ['']       # current file being downloaded
-                _last_t = [0.0]        # throttle: last report time
-
-                def _fmt(b):
-                    if b >= 1_000_000_000: return f'{b/1_000_000_000:.2f} GB'
-                    if b >= 1_000_000: return f'{b/1_000_000:.0f} MB'
-                    return f'{b/1_000:.0f} KB'
-
-                try:
-                    import tqdm, tqdm.auto
-                    _Orig = tqdm.auto.tqdm
-
-                    class _PT(_Orig):
-                        def __init__(self, *a, **kw):
-                            kw['disable'] = False
-                            super().__init__(*a, **kw)
-                        def update(self, n=1):
-                            r = super().update(n)
-                            tb = _total_bytes[0]
-                            if self.total and self.total > 50000 and tb > 0:
-                                now = time.time()
-                                if now - _last_t[0] < 0.3:
-                                    return r
-                                _last_t[0] = now
-                                done = _completed[0] + self.n
-                                pct = min(99, int(done * 100 / tb))
-                                print(f'PROGRESS:{pct}:{_fmt(done)} / {_total_str[0]}:{_cur_file[0]}', flush=True)
-                            return r
-
-                    tqdm.auto.tqdm = _PT
-                    tqdm.tqdm = _PT
-                except Exception:
-                    pass
-
-                os.environ.pop('HF_HUB_DISABLE_PROGRESS_BARS', None)
-
-                from huggingface_hub import HfApi, hf_hub_download
-
-                model = '\(modelName)'
-                api = HfApi()
-
-                try:
-                    info = api.model_info(model, files_metadata=True)
-                except Exception as e:
-                    print(f'ERROR:{e}', flush=True)
-                    sys.exit(1)
-
-                file_list = []
-                for f in info.siblings:
-                    size = getattr(f, 'size', None) or 0
-                    file_list.append((f.rfilename, size))
-
-                _total_bytes[0] = sum(s for _, s in file_list)
-                _total_str[0] = _fmt(_total_bytes[0])
-
-                print(f'PROGRESS:0:0 / {_total_str[0]}:Preparing...', flush=True)
-
-                for i, (fname, fsize) in enumerate(file_list):
-                    _cur_file[0] = fname
-                    try:
-                        hf_hub_download(model, fname)
-                    except Exception as e:
-                        print(f'ERROR:{e}', flush=True)
-                        sys.exit(1)
-                    _completed[0] += fsize
-                    pct = int(_completed[0] * 100 / _total_bytes[0]) if _total_bytes[0] > 0 else 100
-                    print(f'PROGRESS:{pct}:{_fmt(_completed[0])} / {_total_str[0]}:{fname} done', flush=True)
-
-                print(f'PROGRESS:100:{_total_str[0]} / {_total_str[0]}:Complete', flush=True)
-                print('DONE', flush=True)
-                """
-            ]
-
-            // Ensure HOME and cache paths are correct
-            var env = ProcessInfo.processInfo.environment
-            env["HOME"] = NSHomeDirectory()
-            env["HF_HOME"] = NSHomeDirectory() + "/.cache/huggingface"
-            process.environment = env
-
-            let stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
-            process.standardOutput = stdoutPipe
-            process.standardError = stderrPipe
-
-            // Read stdout line by line for progress
-            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
-
-                for line in output.components(separatedBy: .newlines) {
-                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if trimmed.hasPrefix("PROGRESS:") {
-                        // Format: PROGRESS:percent:sizeInfo:description
-                        let parts = trimmed.dropFirst("PROGRESS:".count).components(separatedBy: ":")
-                        if parts.count >= 3,
-                           let pct = Double(parts[0]) {
-                            let sizeInfo = parts[1]
-                            let desc = parts[2...].joined(separator: ":")
-                            let msg = "\(sizeInfo) — \(desc)"
-                            DispatchQueue.main.async {
-                                onProgress(DownloadProgress(percent: pct / 100.0, fileName: desc, message: msg))
-                            }
+                let modelURL = try await WhisperKit.download(
+                    variant: variant,
+                    downloadBase: modelStorageDir,
+                    progressCallback: { progress in
+                        let pct = progress.fractionCompleted
+                        let msg = String(format: "Downloading... %.0f%%", pct * 100)
+                        DispatchQueue.main.async {
+                            onProgress(DownloadProgress(percent: pct, fileName: variant, message: msg))
                         }
                     }
-                }
-            }
+                )
 
-            do {
-                try process.run()
-                process.waitUntilExit()
-            } catch {
+                log("Model download success: \(variant) → \(modelURL.path)")
                 DispatchQueue.main.async {
-                    onProgress(DownloadProgress(percent: 0, fileName: "", message: "Error: \(error.localizedDescription)"))
+                    onProgress(DownloadProgress(percent: 1.0, fileName: variant, message: "Download complete"))
+                    onComplete(true)
+                }
+            } catch {
+                log("Model download failed: \(variant) — \(error)")
+                DispatchQueue.main.async {
+                    onProgress(DownloadProgress(percent: 0, fileName: variant, message: "Error: \(error.localizedDescription)"))
                     onComplete(false)
                 }
-                return
-            }
-
-            stdoutPipe.fileHandleForReading.readabilityHandler = nil
-
-            let success = process.terminationStatus == 0
-            if !success {
-                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                let errStr = String(data: stderrData, encoding: .utf8) ?? "Unknown error"
-                log("Model download failed: \(modelName) — \(errStr.prefix(300))")
-            } else {
-                log("Model download success: \(modelName)")
-            }
-
-            DispatchQueue.main.async {
-                onComplete(success)
             }
         }
     }
-    /// Delete a downloaded model from the HuggingFace cache
+
+    /// Delete a downloaded model
     static func deleteModel(_ modelName: String) -> Bool {
-        let cacheDir = NSHomeDirectory() + "/.cache/huggingface/hub"
-        let dirName = "models--" + modelName.replacingOccurrences(of: "/", with: "--")
-        let fullPath = cacheDir + "/" + dirName
-
         let fm = FileManager.default
-        guard fm.fileExists(atPath: fullPath) else {
-            log("Delete model: directory not found: \(fullPath)")
+        let repoDir = modelStorageDir
+            .appendingPathComponent("models/argmaxinc/whisperkit-coreml")
+
+        guard let entries = try? fm.contentsOfDirectory(atPath: repoDir.path) else {
+            log("Delete model: repo dir not found")
             return false
         }
 
-        do {
-            try fm.removeItem(atPath: fullPath)
-            log("Delete model: removed \(modelName) (\(fullPath))")
-            return true
-        } catch {
-            log("Delete model: failed to remove \(modelName) — \(error)")
-            return false
+        for entry in entries {
+            let variant = entry
+                .replacingOccurrences(of: "openai_whisper-", with: "")
+                .replacingOccurrences(of: "distil-whisper_distil-", with: "distil-")
+            if variant == modelName {
+                let fullPath = repoDir.appendingPathComponent(entry)
+                do {
+                    try fm.removeItem(at: fullPath)
+                    log("Delete model: removed \(modelName) (\(fullPath.path))")
+                    return true
+                } catch {
+                    log("Delete model: failed — \(error)")
+                    return false
+                }
+            }
         }
+        log("Delete model: not found — \(modelName)")
+        return false
     }
 
-    /// Get approximate size of a cached model
+    /// Get disk size of a cached model
     static func cachedModelSize(_ modelName: String) -> String {
-        let cacheDir = NSHomeDirectory() + "/.cache/huggingface/hub"
-        let dirName = "models--" + modelName.replacingOccurrences(of: "/", with: "--")
-        let fullPath = cacheDir + "/" + dirName
-
+        guard let folder = modelFolder(for: modelName) else { return "?" }
         let fm = FileManager.default
-        guard let enumerator = fm.enumerator(atPath: fullPath) else { return "?" }
+        guard let enumerator = fm.enumerator(atPath: folder) else { return "?" }
 
         var totalSize: UInt64 = 0
         while let file = enumerator.nextObject() as? String {
-            let filePath = fullPath + "/" + file
-            if let attrs = try? fm.attributesOfItem(atPath: filePath),
+            if let attrs = try? fm.attributesOfItem(atPath: folder + "/" + file),
                let size = attrs[.size] as? UInt64 {
                 totalSize += size
             }
@@ -372,9 +258,17 @@ class Settings {
 
         if totalSize > 1_000_000_000 {
             return String(format: "%.1f GB", Double(totalSize) / 1_000_000_000)
-        } else {
+        } else if totalSize > 1_000_000 {
             return String(format: "%.0f MB", Double(totalSize) / 1_000_000)
         }
+        return String(format: "%.0f KB", Double(totalSize) / 1_000)
+    }
+
+    /// Download progress info
+    struct DownloadProgress {
+        let percent: Double
+        let fileName: String
+        let message: String
     }
 }
 

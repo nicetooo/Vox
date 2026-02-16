@@ -7,15 +7,58 @@ class RecordingOverlay {
     private var waveformView: WaveformView?
     private var audioLevel: Float = 0.0
 
-    func show() {
-        guard window == nil else { return }
+    private var messageLabel: NSTextField?
 
-        let width: CGFloat = 220
+    func show() {
+        showOverlay(mode: .recording)
+    }
+
+    /// Show a text message (e.g. "Loading model...") instead of waveform
+    func showMessage(_ text: String) {
+        showOverlay(mode: .message(text))
+    }
+
+    private enum OverlayMode {
+        case recording
+        case message(String)
+    }
+
+    private func showOverlay(mode: OverlayMode) {
+        // If already showing, just update content
+        if let window = window {
+            switch mode {
+            case .recording:
+                messageLabel?.isHidden = true
+                waveformView?.isHidden = false
+                startAnimation()
+            case .message(let text):
+                stopAnimation()
+                waveformView?.isHidden = true
+                if let label = messageLabel {
+                    label.stringValue = text
+                    label.isHidden = false
+                }
+            }
+            window.orderFront(nil)
+            return
+        }
+
+        let width: CGFloat = 280
         let height: CGFloat = 56
 
         // Create the waveform view
         let waveform = WaveformView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         self.waveformView = waveform
+
+        // Create message label (for loading states) — vertically + horizontally centered
+        let label = NSTextField(labelWithString: "")
+        let labelHeight: CGFloat = 20
+        label.frame = NSRect(x: 16, y: (height - labelHeight) / 2, width: width - 32, height: labelHeight)
+        label.alignment = .center
+        label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        label.textColor = NSColor(white: 0.85, alpha: 1.0)
+        label.isHidden = true
+        self.messageLabel = label
 
         // Dark background container
         let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
@@ -23,9 +66,9 @@ class RecordingOverlay {
         container.layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.92).cgColor
         container.layer?.cornerRadius = 14
         container.layer?.masksToBounds = true
-        // No border
         container.layer?.borderWidth = 0
         container.addSubview(waveform)
+        container.addSubview(label)
 
         // Create floating panel — completely borderless
         let panel = NSPanel(
@@ -53,7 +96,16 @@ class RecordingOverlay {
         panel.orderFront(nil)
         self.window = panel
 
-        startAnimation()
+        switch mode {
+        case .recording:
+            messageLabel?.isHidden = true
+            waveformView?.isHidden = false
+            startAnimation()
+        case .message(let text):
+            waveformView?.isHidden = true
+            label.stringValue = text
+            label.isHidden = false
+        }
     }
 
     func hide() {

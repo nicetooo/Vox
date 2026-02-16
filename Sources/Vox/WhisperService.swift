@@ -1,11 +1,146 @@
+import CoreML
 import Foundation
 import NaturalLanguage
+import WhisperKit
 
-/// Calls the locally installed mlx_whisper CLI to transcribe audio.
+/// Transcribes audio using WhisperKit (CoreML-native, no Python/ffmpeg needed).
 class WhisperService {
-    private var whisperPath: String { Settings.mlxWhisperPath }
-    private let outputDir = "/tmp"
-    private let outputName = "va_result"
+    private var whisperKit: WhisperKit?
+    private var loadedModel: String = ""
+    private(set) var isLoading = false
+
+    /// Whether a model is loaded and ready for transcription
+    var isModelReady: Bool { whisperKit != nil && !loadedModel.isEmpty }
+
+    /// Transcribe audio file. Returns the text or nil on failure.
+    /// Call from a Task {} context (async).
+    func transcribe(audioPath: String) async -> String? {
+        guard FileManager.default.fileExists(atPath: audioPath) else {
+            log("Whisper: audio file not found: \(audioPath)")
+            return nil
+        }
+
+        // Ensure model is loaded
+        let model = Settings.shared.whisperModel
+        log("Whisper: transcribe called, model=\(model), loaded=\(loadedModel), kit=\(whisperKit == nil ? "nil" : "ok"), isLoading=\(isLoading)")
+        if whisperKit == nil || loadedModel != model {
+            guard await loadModel(model) else { return nil }
+        }
+
+        guard let kit = whisperKit else {
+            log("Whisper: not initialized")
+            return nil
+        }
+
+        // Build decoding options
+        let forcedLang = Settings.shared.whisperLanguageArg
+        var options = DecodingOptions()
+        options.language = forcedLang
+        options.detectLanguage = (forcedLang == nil)
+        options.verbose = false
+
+        log("Whisper: transcribing (model: \(model), lang: \(forcedLang ?? "auto"))...")
+        let startTime = Date()
+
+        do {
+            let results: [TranscriptionResult] = try await kit.transcribe(audioPath: audioPath, decodeOptions: options)
+
+            guard let result = results.first else {
+                log("Whisper: no result")
+                return nil
+            }
+
+            var rawText = result.text
+            let detectedLang = result.language
+            let elapsed = String(format: "%.1f", Date().timeIntervalSince(startTime))
+            log("Whisper: done in \(elapsed)s, detected=\(detectedLang), text=\(rawText.prefix(100))")
+
+            // If auto-detecting, verify result language matches user's selection
+            if forcedLang == nil && !Settings.shared.selectedLanguages.isEmpty {
+                let cleaned = cleanupTranscription(rawText)
+                if !isLanguageExpected(cleaned) {
+                    if let retryLang = bestRetryLanguage() {
+                        log("Whisper: language mismatch, retrying with forced '\(retryLang)'")
+                        var retryOptions = options
+                        retryOptions.language = retryLang
+                        retryOptions.detectLanguage = false
+                        if let retryResults: [TranscriptionResult] = try? await kit.transcribe(audioPath: audioPath, decodeOptions: retryOptions),
+                           let retryResult = retryResults.first {
+                            rawText = retryResult.text
+                        }
+                    }
+                }
+            }
+
+            var finalText = cleanupTranscription(rawText)
+            finalText = convertChineseIfNeeded(finalText)
+            log("Whisper: result = \"\(finalText)\"")
+            return finalText
+
+        } catch {
+            log("Whisper: transcription failed: \(error)")
+            return nil
+        }
+    }
+
+    // MARK: - Model Loading
+
+    /// Load a WhisperKit model. Returns true on success.
+    func loadModel(_ variant: String) async -> Bool {
+        guard !isLoading else {
+            log("Whisper: already loading a model, please wait")
+            return false
+        }
+        isLoading = true
+        defer { isLoading = false }
+
+        log("Whisper: loading model '\(variant)'...")
+        let startTime = Date()
+
+        do {
+            // Skip ANE (Neural Engine) — CoreML's ANE compilation hangs on large models.
+            // Use CPU+GPU only, which loads instantly and is still fast on Apple Silicon.
+            let compute = ModelComputeOptions(
+                melCompute: .cpuAndGPU,
+                audioEncoderCompute: .cpuAndGPU,
+                textDecoderCompute: .cpuAndGPU,
+                prefillCompute: .cpuAndGPU
+            )
+
+            let config = WhisperKitConfig(
+                model: variant,
+                downloadBase: Settings.modelStorageDir,
+                computeOptions: compute,
+                verbose: true,
+                logLevel: .debug,
+                prewarm: false,
+                load: true,
+                download: true
+            )
+
+            log("Whisper: calling WhisperKit init (variant=\(variant), base=\(Settings.modelStorageDir.path))...")
+            whisperKit = try await WhisperKit(config)
+            loadedModel = variant
+
+            let elapsed = String(format: "%.1f", Date().timeIntervalSince(startTime))
+            log("Whisper: model '\(variant)' loaded in \(elapsed)s ✓")
+            return true
+        } catch {
+            log("Whisper: FAILED to load model '\(variant)': \(error)")
+            whisperKit = nil
+            loadedModel = ""
+            return false
+        }
+    }
+
+    /// Unload the current model to free memory
+    func unloadModel() {
+        whisperKit = nil
+        loadedModel = ""
+        log("Whisper: model unloaded")
+    }
+
+    // MARK: - Language Verification
 
     /// Map internal language codes to Whisper language codes
     private static let whisperLangMap: [String: String] = [
@@ -13,120 +148,11 @@ class WhisperService {
         "zh-Hant": "zh",
     ]
 
-    /// Transcribe audio file. Returns the text or nil on failure.
-    /// This is a blocking call — run on a background thread.
-    func transcribe(audioPath: String) -> String? {
-        guard FileManager.default.fileExists(atPath: audioPath) else {
-            log("Whisper: Audio file not found: \(audioPath)")
-            return nil
-        }
-
-        let forcedLang = Settings.shared.whisperLanguageArg
-        guard var rawText = runWhisper(audioPath: audioPath, language: forcedLang) else {
-            return nil
-        }
-
-        // If auto-detecting (multiple languages selected), verify result language.
-        // Whisper sometimes misdetects — e.g. Chinese as Korean.
-        // If the result language isn't in the user's selected set, retry with forced language.
-        if forcedLang == nil && !Settings.shared.selectedLanguages.isEmpty {
-            let cleaned = cleanupTranscription(rawText)
-            if !isLanguageExpected(cleaned) {
-                if let retryLang = bestRetryLanguage() {
-                    log("Whisper: language mismatch, retrying with forced '\(retryLang)'")
-                    if let retryText = runWhisper(audioPath: audioPath, language: retryLang) {
-                        rawText = retryText
-                    }
-                }
-            }
-        }
-
-        var result = cleanupTranscription(rawText)
-        result = convertChineseIfNeeded(result)
-        log("Whisper: result = \"\(result)\"")
-        return result
-    }
-
-    // MARK: - Whisper CLI
-
-    private func runWhisper(audioPath: String, language: String?) -> String? {
-        // Clean previous result
-        let resultPath = "\(outputDir)/\(outputName).txt"
-        try? FileManager.default.removeItem(atPath: resultPath)
-
-        let model = Settings.shared.whisperModel
-        var args = [
-            audioPath,
-            "--model", model,
-            "--output-format", "txt",
-            "--output-dir", outputDir,
-            "--output-name", outputName,
-        ]
-
-        if let lang = language {
-            args += ["--language", lang]
-            log("Whisper: using language = \(lang)")
-        } else {
-            log("Whisper: auto-detecting language")
-        }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: whisperPath)
-        process.arguments = args
-
-        // GUI apps have minimal PATH — add common locations so mlx_whisper can find ffmpeg
-        var env = ProcessInfo.processInfo.environment
-        let extraPaths = [
-            "/opt/homebrew/bin",
-            "/opt/homebrew/sbin",
-            "/usr/local/bin",
-            "/Library/Frameworks/Python.framework/Versions/Current/bin",
-        ]
-        let currentPath = env["PATH"] ?? "/usr/bin:/bin"
-        env["PATH"] = (extraPaths + [currentPath]).joined(separator: ":")
-        process.environment = env
-
-        let stderrPipe = Pipe()
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = stderrPipe
-
-        log("Whisper: starting transcription (model: \(model))...")
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            log("Whisper: failed to run: \(error)")
-            return nil
-        }
-
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        if let stderrStr = String(data: stderrData, encoding: .utf8), !stderrStr.isEmpty {
-            log("Whisper stderr: \(stderrStr.prefix(2000))")
-        }
-
-        guard process.terminationStatus == 0 else {
-            log("Whisper: exited with status \(process.terminationStatus)")
-            return nil
-        }
-
-        guard let text = try? String(contentsOfFile: resultPath, encoding: .utf8) else {
-            log("Whisper: could not read result file")
-            return nil
-        }
-
-        return text
-    }
-
-    // MARK: - Language Verification
-
-    /// Check if the transcription result matches one of the user's selected languages
     private func isLanguageExpected(_ text: String) -> Bool {
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(text)
         guard let detected = recognizer.dominantLanguage else { return true }
 
-        // Compare at base language level: "zh-Hans" → "zh", "ko" → "ko"
         let detectedBase = detected.rawValue.components(separatedBy: "-").first ?? detected.rawValue
         let selectedBases = Set(Settings.shared.selectedLanguages.map {
             $0.components(separatedBy: "-").first ?? $0
@@ -139,7 +165,6 @@ class WhisperService {
         return expected
     }
 
-    /// Pick the best language to force on retry
     private func bestRetryLanguage() -> String? {
         let langs = Settings.shared.selectedLanguages
         guard let first = langs.first else { return nil }
@@ -148,7 +173,6 @@ class WhisperService {
 
     // MARK: - Line Cleanup
 
-    /// Merge Whisper's multi-line segment output into a single line with spaces.
     private func cleanupTranscription(_ text: String) -> String {
         return text
             .components(separatedBy: .newlines)
@@ -159,24 +183,18 @@ class WhisperService {
 
     // MARK: - Chinese Conversion
 
-    /// Convert between simplified and traditional Chinese based on user settings.
-    /// Uses macOS built-in ICU transforms — no external dependencies.
     private func convertChineseIfNeeded(_ text: String) -> String {
         if Settings.shared.chineseSimplified {
             let mutable = NSMutableString(string: text)
             CFStringTransform(mutable, nil, "Hant-Hans" as CFString, false)
             let converted = mutable as String
-            if converted != text {
-                log("Whisper: converted traditional → simplified")
-            }
+            if converted != text { log("Whisper: converted traditional → simplified") }
             return converted
         } else if Settings.shared.chineseTraditional {
             let mutable = NSMutableString(string: text)
             CFStringTransform(mutable, nil, "Hans-Hant" as CFString, false)
             let converted = mutable as String
-            if converted != text {
-                log("Whisper: converted simplified → traditional")
-            }
+            if converted != text { log("Whisper: converted simplified → traditional") }
             return converted
         }
         return text
