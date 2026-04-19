@@ -69,31 +69,56 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Tag IDs for dynamic permission menu items
     private let permissionSectionTag = 9000
 
+    // Tag IDs for dynamic hotkey-description menu items
+    private let hotkeySectionTag = 9100
+
     private func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         updateState(.ready)
 
         let menu = NSMenu()
         menu.delegate = self
-        menu.addItem(NSMenuItem(title: "Hold Right ⌘ — Voice Input", action: nil, keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Tap Right ⌘ — Toggle History", action: nil, keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Tap Right ⌥ — Translate Selection", action: nil, keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Double-tap Right ⌥ — Screenshot", action: nil, keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
+        // Hotkey descriptions are populated dynamically in menuWillOpen.
         menu.addItem(NSMenuItem(title: "History...", action: #selector(openHistory), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit Vox", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit Vox", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
         statusItem.menu = menu
+    }
+
+    private func hotkeyMenuLabel(for action: HotkeyAction) -> String {
+        let b = Settings.shared.hotkeyBinding(for: action)
+        let prefix: String
+        switch action.gesture {
+        case .tap: prefix = "Tap"
+        case .hold: prefix = "Hold"
+        case .doubleTap: prefix = "Double-tap"
+        }
+        return "\(prefix) \(b.side.displayName) \(b.modifier.symbol) — \(action.displayName)"
     }
 
     // MARK: - Dynamic Menu (permission status)
 
     func menuWillOpen(_ menu: NSMenu) {
-        // Remove old permission items
-        while let item = menu.items.first(where: { $0.tag == permissionSectionTag }) {
+        // Remove old permission + hotkey items (we rebuild them each open).
+        while let item = menu.items.first(where: {
+            $0.tag == permissionSectionTag || $0.tag == hotkeySectionTag
+        }) {
             menu.removeItem(item)
         }
+
+        // Insert hotkey descriptions at the top (reflects current bindings).
+        var insertIdx = 0
+        for action in HotkeyAction.allCases {
+            let item = NSMenuItem(title: hotkeyMenuLabel(for: action), action: nil, keyEquivalent: "")
+            item.tag = hotkeySectionTag
+            menu.insertItem(item, at: insertIdx)
+            insertIdx += 1
+        }
+        let sepHot = NSMenuItem.separator()
+        sepHot.tag = hotkeySectionTag
+        menu.insertItem(sepHot, at: insertIdx)
+        insertIdx += 1
 
         // Check permissions reliably
         let accessibilityOK = AXIsProcessTrusted()
@@ -109,7 +134,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         if !issues.isEmpty {
-            for (i, (title, action)) in issues.enumerated() {
+            for (title, action) in issues {
                 let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
                 item.target = self
                 item.tag = permissionSectionTag
@@ -118,11 +143,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     .font: NSFont.systemFont(ofSize: 13, weight: .medium)
                 ]
                 item.attributedTitle = NSAttributedString(string: title, attributes: attrs)
-                menu.insertItem(item, at: i)
+                menu.insertItem(item, at: insertIdx)
+                insertIdx += 1
             }
             let sep = NSMenuItem.separator()
             sep.tag = permissionSectionTag
-            menu.insertItem(sep, at: issues.count)
+            menu.insertItem(sep, at: insertIdx)
         }
     }
 
@@ -217,7 +243,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
-
+        // When the model finishes loading while the user is already recording,
+        // swap the overlay from "Loading model..." to the live waveform.
+        whisperService.onModelReady = { [weak self] in
+            guard let self = self, self.isRecording else { return }
+            log("Model became ready during recording — switching overlay to waveform")
+            self.recordingOverlay.show()
+        }
     }
 
     // MARK: - Key Monitor
@@ -225,23 +257,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func setupKeyMonitor() {
         keyMonitor = KeyMonitor()
 
-        keyMonitor.onRightCmdTap = { [weak self] in
-            self?.toggleHistory()
-        }
-        keyMonitor.onRightCmdDown = { [weak self] in
-            self?.startRecording()
-        }
-        keyMonitor.onRightCmdUp = { [weak self] in
-            self?.stopRecordingAndTranscribe()
-        }
-        keyMonitor.onRightOptTap = { [weak self] in
-            self?.translateSelection()
-        }
-        keyMonitor.onRightOptDoubleTap = { [weak self] in
-            self?.takeScreenshot()
-        }
+        keyMonitor.onVoiceInputDown = { [weak self] in self?.startRecording() }
+        keyMonitor.onVoiceInputUp = { [weak self] in self?.stopRecordingAndTranscribe() }
+        keyMonitor.onToggleHistory = { [weak self] in self?.toggleHistory() }
+        keyMonitor.onTranslate = { [weak self] in self?.translateSelection() }
+        keyMonitor.onScreenshot = { [weak self] in self?.takeScreenshot() }
 
         keyMonitor.start()
+    }
+
+    /// Called by Settings UI after the user changes hotkey bindings.
+    func reloadHotkeyBindings() {
+        keyMonitor?.reloadBindings()
     }
 
     // MARK: - Voice Input

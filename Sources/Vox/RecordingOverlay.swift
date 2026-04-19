@@ -43,32 +43,76 @@ class RecordingOverlay {
             return
         }
 
-        let width: CGFloat = 280
-        let height: CGFloat = 56
+        let innerWidth: CGFloat = 280
+        let innerHeight: CGFloat = 56
+        let cornerRadius: CGFloat = 14
+        // Padding around the inner container so the glow can fully fade out
+        // before hitting the NSPanel's hard edge. Must be ≥ ~2.5× outer
+        // shadowRadius or you'll see a rectangular cut-off where the shadow
+        // meets the panel. We stack two shadow layers (see below), so this
+        // needs to accommodate the widest one.
+        let glowPad: CGFloat = 70
+        let width = innerWidth + glowPad * 2
+        let height = innerHeight + glowPad * 2
+        let shadowPath = CGPath(
+            roundedRect: CGRect(x: 0, y: 0, width: innerWidth, height: innerHeight),
+            cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil
+        )
 
         // Create the waveform view
-        let waveform = WaveformView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        let waveform = WaveformView(frame: NSRect(x: 0, y: 0, width: innerWidth, height: innerHeight))
         self.waveformView = waveform
 
         // Create message label (for loading states) — vertically + horizontally centered
         let label = NSTextField(labelWithString: "")
         let labelHeight: CGFloat = 20
-        label.frame = NSRect(x: 16, y: (height - labelHeight) / 2, width: width - 32, height: labelHeight)
+        label.frame = NSRect(x: 16, y: (innerHeight - labelHeight) / 2, width: innerWidth - 32, height: labelHeight)
         label.alignment = .center
         label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         label.textColor = NSColor(white: 0.85, alpha: 1.0)
         label.isHidden = true
         self.messageLabel = label
 
-        // Dark background container
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        let glowColor = NSColor(red: 0.55, green: 0.80, blue: 1.0, alpha: 1.0).cgColor
+
+        // Outer diffuse halo: wide soft glow. Its large radius spreads light
+        // far enough that the per-corner density drop becomes imperceptible,
+        // which visually fills the "notch" at the four corners of the inner
+        // glow. Layer is fully transparent — the explicit shadowPath alone is
+        // enough to generate the shadow.
+        let halo = NSView(frame: NSRect(x: glowPad, y: glowPad, width: innerWidth, height: innerHeight))
+        halo.wantsLayer = true
+        halo.layer?.backgroundColor = NSColor.clear.cgColor
+        halo.layer?.masksToBounds = false
+        halo.layer?.shadowColor = glowColor
+        halo.layer?.shadowOpacity = 0.45
+        halo.layer?.shadowRadius = 28
+        halo.layer?.shadowOffset = .zero
+        halo.layer?.shadowPath = shadowPath
+
+        // Inner dark container with hairline border + tight rim glow.
+        // masksToBounds must be false so the layer shadow is visible.
+        let container = NSView(frame: NSRect(x: glowPad, y: glowPad, width: innerWidth, height: innerHeight))
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.92).cgColor
-        container.layer?.cornerRadius = 14
-        container.layer?.masksToBounds = true
-        container.layer?.borderWidth = 0
+        container.layer?.cornerRadius = cornerRadius
+        container.layer?.masksToBounds = false
+        container.layer?.borderWidth = 1.0
+        container.layer?.borderColor = NSColor(white: 1.0, alpha: 0.18).cgColor
+        container.layer?.shadowColor = glowColor
+        container.layer?.shadowOpacity = 0.55
+        container.layer?.shadowRadius = 10
+        container.layer?.shadowOffset = .zero
+        // Explicit shadowPath — without this CALayer infers shadow from alpha
+        // mask and corners look discontinuous.
+        container.layer?.shadowPath = shadowPath
         container.addSubview(waveform)
         container.addSubview(label)
+
+        // Outer transparent host: halo goes first (behind), container on top.
+        let outer = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        outer.addSubview(halo)
+        outer.addSubview(container)
 
         // Create floating panel — completely borderless
         let panel = NSPanel(
@@ -83,13 +127,14 @@ class RecordingOverlay {
         panel.hasShadow = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = false
-        panel.contentView = container
+        panel.contentView = outer
 
-        // Position at bottom center of main screen
+        // Position at bottom center of main screen — shift by glowPad so the
+        // *visual* container sits where the old overlay did.
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
             let x = screenFrame.midX - width / 2
-            let y = screenFrame.minY + 80
+            let y = screenFrame.minY + 80 - glowPad
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
 

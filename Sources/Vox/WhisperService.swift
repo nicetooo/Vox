@@ -12,6 +12,11 @@ class WhisperService {
     /// Whether a model is loaded and ready for transcription
     var isModelReady: Bool { whisperKit != nil && !loadedModel.isEmpty }
 
+    /// Fired on the main actor whenever a model finishes loading successfully.
+    /// AppDelegate uses this to swap the recording overlay from "Loading model..."
+    /// to the waveform if the user is already holding the record hotkey.
+    var onModelReady: (() -> Void)?
+
     /// Transcribe audio file. Returns the text or nil on failure.
     /// Call from a Task {} context (async).
     func transcribe(audioPath: String) async -> String? {
@@ -38,6 +43,18 @@ class WhisperService {
         options.language = forcedLang
         options.detectLanguage = (forcedLang == nil)
         options.verbose = false
+        options.suppressBlank = true
+        // Thresholds tuned to suppress hallucinations on silence
+        options.noSpeechThreshold = 0.6
+        options.logProbThreshold = -1.0
+        options.compressionRatioThreshold = 2.4
+        // Speed flags — skip timestamp tokens (decode fewer tokens, also solves
+        // the <|0.00|> token leak we saw on multi-segment outputs) and disable
+        // temperature fallback retries. Our hallucination filter is the safety
+        // net for the edge cases fallback would normally catch.
+        options.withoutTimestamps = true
+        options.wordTimestamps = false
+        options.temperatureFallbackCount = 0
 
         log("Whisper: transcribing (model: \(model), lang: \(forcedLang ?? "auto"))...")
         let startTime = Date()
@@ -50,10 +67,24 @@ class WhisperService {
                 return nil
             }
 
-            var rawText = result.text
             let detectedLang = result.language
             let elapsed = String(format: "%.1f", Date().timeIntervalSince(startTime))
-            log("Whisper: done in \(elapsed)s, detected=\(detectedLang), text=\(rawText.prefix(100))")
+
+            // Filter segments: drop those with high noSpeechProb (hallucination on silence)
+            let filteredSegments = result.segments.filter { segment in
+                let dominated = segment.noSpeechProb > 0.6 && segment.avgLogprob < -0.7
+                if dominated {
+                    log("Whisper: dropping segment (noSpeech=\(String(format: "%.2f", segment.noSpeechProb)), avgLogP=\(String(format: "%.2f", segment.avgLogprob))): \"\(segment.text.prefix(60))\"")
+                }
+                return !dominated
+            }
+
+            var rawText = filteredSegments.map { $0.text }.joined(separator: " ")
+            if rawText.isEmpty && !result.text.isEmpty {
+                // Fallback: if all segments were filtered, use original (rare edge case)
+                rawText = result.text
+            }
+            log("Whisper: done in \(elapsed)s, detected=\(detectedLang), segments=\(result.segments.count)→\(filteredSegments.count), text=\(rawText.prefix(100))")
 
             // If auto-detecting, verify result language matches user's selection
             if forcedLang == nil && !Settings.shared.selectedLanguages.isEmpty {
@@ -73,6 +104,11 @@ class WhisperService {
             }
 
             var finalText = cleanupTranscription(rawText)
+            finalText = removeTrailingHallucinations(finalText)
+            if finalText.isEmpty {
+                log("Whisper: result empty after hallucination filtering, discarding")
+                return nil
+            }
             finalText = convertChineseIfNeeded(finalText)
             log("Whisper: result = \"\(finalText)\"")
             return finalText
@@ -98,14 +134,10 @@ class WhisperService {
         let startTime = Date()
 
         do {
-            // Skip ANE (Neural Engine) — CoreML's ANE compilation hangs on large models.
-            // Use CPU+GPU only, which loads instantly and is still fast on Apple Silicon.
-            let compute = ModelComputeOptions(
-                melCompute: .cpuAndGPU,
-                audioEncoderCompute: .cpuAndGPU,
-                textDecoderCompute: .cpuAndGPU,
-                prefillCompute: .cpuAndGPU
-            )
+            // ANE (Neural Engine) is 3-5× faster than CPU+GPU on Apple Silicon,
+            // but CoreML's ANE compilation is known to hang on the large-v* variants.
+            // Use ANE for smaller models, CPU+GPU for large.
+            let compute = WhisperService.computeOptions(for: variant)
 
             let config = WhisperKitConfig(
                 model: variant,
@@ -113,7 +145,7 @@ class WhisperService {
                 computeOptions: compute,
                 verbose: true,
                 logLevel: .debug,
-                prewarm: false,
+                prewarm: true,   // warm CoreML compute pipelines at load time
                 load: true,
                 download: true
             )
@@ -124,6 +156,8 @@ class WhisperService {
 
             let elapsed = String(format: "%.1f", Date().timeIntervalSince(startTime))
             log("Whisper: model '\(variant)' loaded in \(elapsed)s ✓")
+            let readyCallback = onModelReady
+            await MainActor.run { readyCallback?() }
             return true
         } catch {
             log("Whisper: FAILED to load model '\(variant)': \(error)")
@@ -138,6 +172,22 @@ class WhisperService {
         whisperKit = nil
         loadedModel = ""
         log("Whisper: model unloaded")
+    }
+
+    /// Pick compute units per variant. large-v* are forced to CPU+GPU because
+    /// CoreML's ANE path is known to hang on their weights; everything else
+    /// gets ANE (cpuAndNeuralEngine) which is 3-5× faster on Apple Silicon.
+    private static func computeOptions(for variant: String) -> ModelComputeOptions {
+        let lower = variant.lowercased()
+        let isLarge = lower.hasPrefix("large") || lower.contains("distil-large")
+        let unit: MLComputeUnits = isLarge ? .cpuAndGPU : .cpuAndNeuralEngine
+        log("Whisper: compute for '\(variant)' = \(isLarge ? "CPU+GPU" : "ANE")")
+        return ModelComputeOptions(
+            melCompute: .cpuAndGPU,  // mel is small; GPU is fine
+            audioEncoderCompute: unit,
+            textDecoderCompute: unit,
+            prefillCompute: unit
+        )
     }
 
     // MARK: - Language Verification
@@ -174,11 +224,97 @@ class WhisperService {
     // MARK: - Line Cleanup
 
     private func cleanupTranscription(_ text: String) -> String {
-        return text
+        // Strip WhisperKit special tokens: <|startoftranscript|>, <|zh|>,
+        // <|transcribe|>, <|0.00|>, <|endoftext|>, etc. These appear on
+        // multi-segment outputs because segment.text includes raw timestamps.
+        let stripped = text.replacingOccurrences(
+            of: #"<\|[^|]*\|>"#,
+            with: "",
+            options: .regularExpression
+        )
+        return stripped
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+
+    // MARK: - Hallucination Filtering
+
+    /// Common Whisper hallucination phrases that appear on silence/trailing audio.
+    /// These are artifacts from YouTube training data endings.
+    private static let hallucinationPhrases: Set<String> = [
+        // "Thank you" family
+        "thank", "thank.", "thank!",
+        "thanks", "thanks.", "thanks!",
+        "thank you", "thank you.", "thank you!",
+        "thank you so much", "thank you so much.",
+        "thank you for watching", "thank you for watching.",
+        "thanks for watching", "thanks for watching.", "thanks for watching!",
+        "thanks a lot", "thanks a lot.",
+        // Subscribe / CTA
+        "like and subscribe", "like and subscribe.",
+        "subscribe", "subscribe.", "please subscribe",
+        // Sign-offs
+        "see you next time", "see you next time.",
+        "see you in the next video", "see you in the next video.",
+        "bye", "bye.", "bye bye", "bye bye.",
+        "goodbye", "goodbye.",
+        "the end", "the end.",
+        // Single-word fragments
+        "you", "you.",
+        "music",
+        "♪",
+        "...",
+        // Known auto-subtitle artifacts
+        "subtitles by the amara.org community",
+        "transcribed by https://otter.ai",
+    ]
+
+    /// Remove hallucination phrases from the end of transcription.
+    /// Works for both pure-hallucination results and trailing hallucinations.
+    private func removeTrailingHallucinations(_ text: String) -> String {
+        var result = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var changed = true
+
+        // Iteratively strip trailing hallucination phrases
+        while changed {
+            changed = false
+            let lower = result.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Check if the entire remaining text is a hallucination
+            if WhisperService.hallucinationPhrases.contains(lower) {
+                log("Whisper: filtered pure hallucination: \"\(result)\"")
+                return ""
+            }
+
+            // Check if text ends with a hallucination phrase
+            for phrase in WhisperService.hallucinationPhrases {
+                if lower.hasSuffix(phrase) {
+                    // Make sure it's a separate phrase (preceded by space/punctuation or is the whole string)
+                    let prefixEnd = result.index(result.endIndex, offsetBy: -phrase.count)
+                    if prefixEnd == result.startIndex {
+                        // Entire text is the hallucination
+                        log("Whisper: filtered pure hallucination: \"\(result)\"")
+                        return ""
+                    }
+                    let charBefore = result[result.index(before: prefixEnd)]
+                    if charBefore == " " || charBefore == "," || charBefore == "." ||
+                       charBefore == "!" || charBefore == "?" || charBefore == "。" ||
+                       charBefore == "，" || charBefore == "、" {
+                        let stripped = String(result[result.startIndex..<prefixEnd])
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                            .trimmingCharacters(in: CharacterSet(charactersIn: " ,，.。、"))
+                        log("Whisper: stripped trailing hallucination \"\(phrase)\" → \"\(stripped.suffix(30))\"")
+                        result = stripped
+                        changed = true
+                        break
+                    }
+                }
+            }
+        }
+
+        return result
     }
 
     // MARK: - Chinese Conversion

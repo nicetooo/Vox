@@ -276,3 +276,108 @@ struct LanguageOption {
     let code: String
     let name: String
 }
+
+// MARK: - Hotkey Configuration
+
+enum HotkeySide: String, CaseIterable {
+    case left, right
+    var displayName: String { self == .left ? "Left" : "Right" }
+}
+
+enum HotkeyModifier: String, CaseIterable {
+    case cmd, option, control
+    var symbol: String {
+        switch self {
+        case .cmd: return "⌘"
+        case .option: return "⌥"
+        case .control: return "⌃"
+        }
+    }
+}
+
+enum HotkeyGesture: String {
+    case tap, hold, doubleTap
+    var displayName: String {
+        switch self {
+        case .tap: return "Tap"
+        case .hold: return "Hold"
+        case .doubleTap: return "Double-tap"
+        }
+    }
+}
+
+enum HotkeyAction: String, CaseIterable {
+    case voiceInput, toggleHistory, translate, screenshot
+
+    var displayName: String {
+        switch self {
+        case .voiceInput: return "Voice Input"
+        case .toggleHistory: return "Toggle History"
+        case .translate: return "Translate Selection"
+        case .screenshot: return "Screenshot"
+        }
+    }
+
+    /// Gesture is fixed per action (strong semantic coupling).
+    var gesture: HotkeyGesture {
+        switch self {
+        case .voiceInput: return .hold
+        case .toggleHistory, .translate: return .tap
+        case .screenshot: return .doubleTap
+        }
+    }
+
+    var defaultBinding: HotkeyBinding {
+        switch self {
+        case .voiceInput, .toggleHistory:
+            return HotkeyBinding(side: .right, modifier: .cmd)
+        case .translate, .screenshot:
+            return HotkeyBinding(side: .right, modifier: .option)
+        }
+    }
+}
+
+struct HotkeyBinding: Equatable {
+    var side: HotkeySide
+    var modifier: HotkeyModifier
+
+    var displayString: String { "\(side.displayName) \(modifier.symbol)" }
+}
+
+extension Settings {
+    func hotkeyBinding(for action: HotkeyAction) -> HotkeyBinding {
+        let sideKey = "hotkey.\(action.rawValue).side"
+        let modKey = "hotkey.\(action.rawValue).modifier"
+        let side = UserDefaults.standard.string(forKey: sideKey).flatMap(HotkeySide.init(rawValue:))
+            ?? action.defaultBinding.side
+        let modifier = UserDefaults.standard.string(forKey: modKey).flatMap(HotkeyModifier.init(rawValue:))
+            ?? action.defaultBinding.modifier
+        return HotkeyBinding(side: side, modifier: modifier)
+    }
+
+    func setHotkeyBinding(_ binding: HotkeyBinding, for action: HotkeyAction) {
+        UserDefaults.standard.set(binding.side.rawValue, forKey: "hotkey.\(action.rawValue).side")
+        UserDefaults.standard.set(binding.modifier.rawValue, forKey: "hotkey.\(action.rawValue).modifier")
+    }
+
+    func resetHotkeys() {
+        for action in HotkeyAction.allCases {
+            setHotkeyBinding(action.defaultBinding, for: action)
+        }
+    }
+
+    /// Returns pairs of actions that conflict (same side+modifier+gesture).
+    func hotkeyConflicts() -> [(HotkeyAction, HotkeyAction)] {
+        var conflicts: [(HotkeyAction, HotkeyAction)] = []
+        let actions = HotkeyAction.allCases
+        for i in 0..<actions.count {
+            for j in (i + 1)..<actions.count {
+                let a = actions[i], b = actions[j]
+                if hotkeyBinding(for: a) == hotkeyBinding(for: b) && a.gesture == b.gesture {
+                    conflicts.append((a, b))
+                }
+            }
+        }
+        return conflicts
+    }
+}

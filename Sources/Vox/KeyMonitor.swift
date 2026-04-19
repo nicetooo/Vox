@@ -1,49 +1,63 @@
 import CoreGraphics
 import Foundation
 
-/// Monitors global key events via CGEventTap to detect:
-/// - Right Command tap (toggle History)
-/// - Right Command hold (push-to-talk for voice input)
-/// - Right Option tap (translate selection)
+/// Monitors global key events via CGEventTap to dispatch user-configured hotkey
+/// actions. Only modifier-key gestures (tap / hold / double-tap) are supported.
+/// Bindings come from Settings and can be reloaded live via `reloadBindings()`.
 class KeyMonitor {
-    // Callbacks
-    var onRightCmdTap: (() -> Void)?
-    var onRightCmdDown: (() -> Void)?
-    var onRightCmdUp: (() -> Void)?
-    var onRightOptTap: (() -> Void)?
-    var onRightOptDoubleTap: (() -> Void)?
+    // MARK: - Action callbacks
+    var onVoiceInputDown: (() -> Void)?   // hold start (after holdThreshold)
+    var onVoiceInputUp: (() -> Void)?     // hold release
+    var onToggleHistory: (() -> Void)?    // tap
+    var onTranslate: (() -> Void)?        // tap
+    var onScreenshot: (() -> Void)?       // double-tap
 
-    // State tracking
-    private var isRightCmdDown = false
-    private var isRightCmdRecording = false    // true once hold threshold passed
-    private var rightCmdDownTime: Date?
-    private var isRightOptDown = false
-    private var rightOptDownTime: Date?
-    private var otherKeyDuringRightOpt = false
-    private var holdTimer: DispatchSourceTimer?
-    private var rightOptLastTapTime: Date?
-    private var rightOptTapTimer: DispatchSourceTimer?
+    // MARK: - Thresholds
+    private let tapThreshold: TimeInterval = 0.3
+    private let holdThreshold: TimeInterval = 0.3
+    private let doubleTapWindow: TimeInterval = 0.3
 
-    // Device-dependent modifier flags (from IOLLEvent.h)
-    private let NX_DEVICERCMDKEYMASK: UInt64  = 0x10
-    private let NX_DEVICERALTKEYMASK: UInt64  = 0x40
+    // MARK: - Device-dependent modifier flags (IOLLEvent.h)
+    private let NX_DEVICELCTLKEYMASK:  UInt64 = 0x00000001
+    private let NX_DEVICELCMDKEYMASK:  UInt64 = 0x00000008
+    private let NX_DEVICERCMDKEYMASK:  UInt64 = 0x00000010
+    private let NX_DEVICELALTKEYMASK:  UInt64 = 0x00000020
+    private let NX_DEVICERALTKEYMASK:  UInt64 = 0x00000040
+    private let NX_DEVICERCTLKEYMASK:  UInt64 = 0x00002000
 
-    // Key codes
-    private let kRightCommand: Int64 = 54  // 0x36
-    private let kRightOption: Int64  = 61  // 0x3D
+    // MARK: - Physical key identity
 
-    // Thresholds
-    private let tapThreshold: TimeInterval = 0.3    // tap if released within this
-    private let holdThreshold: TimeInterval = 0.3   // start recording after this
-    private let doubleTapWindow: TimeInterval = 0.3 // double-tap if two taps within this
+    /// (side, modifier) identifies a physical modifier key.
+    private struct PhysicalKey: Hashable {
+        let side: HotkeySide
+        let modifier: HotkeyModifier
+    }
 
-    // Permission detection: set to true once any event arrives
+    /// Per-physical-key runtime state.
+    private class KeyState {
+        var isDown = false
+        var downTime: Date?
+        var holdFired = false
+        var otherKeyPressed = false
+        var lastTapTime: Date?
+        var holdTimer: DispatchSourceTimer?
+        var tapTimer: DispatchSourceTimer?
+    }
+
+    private var bindings: [PhysicalKey: [HotkeyAction]] = [:]
+    private var states: [PhysicalKey: KeyState] = [:]
+
+    // MARK: - Permission detection
     private(set) var hasReceivedEvent = false
     let startTime = Date()
 
     fileprivate var eventTap: CFMachPort?
 
+    // MARK: - Lifecycle
+
     func start() {
+        reloadBindings()
+
         let mask: CGEventMask =
             (1 << CGEventType.flagsChanged.rawValue) |
             (1 << CGEventType.keyDown.rawValue)
@@ -76,6 +90,27 @@ class KeyMonitor {
         }
     }
 
+    /// Rebuild the action → physical-key map from Settings. Cancels any in-flight
+    /// timers so a rebind mid-press does not leak state.
+    func reloadBindings() {
+        for state in states.values {
+            state.holdTimer?.cancel()
+            state.tapTimer?.cancel()
+        }
+        states.removeAll()
+        bindings.removeAll()
+
+        for action in HotkeyAction.allCases {
+            let b = Settings.shared.hotkeyBinding(for: action)
+            let key = PhysicalKey(side: b.side, modifier: b.modifier)
+            bindings[key, default: []].append(action)
+            if states[key] == nil { states[key] = KeyState() }
+        }
+        log("KeyMonitor: bindings reloaded — \(bindings.count) physical keys, \(HotkeyAction.allCases.count) actions")
+    }
+
+    // MARK: - Event handling
+
     fileprivate func handleEvent(type: CGEventType, event: CGEvent) {
         if !hasReceivedEvent {
             hasReceivedEvent = true
@@ -83,107 +118,156 @@ class KeyMonitor {
         }
 
         if type == .flagsChanged {
-            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            // Sync state of ALL tracked physical keys from the flags field, not
+            // just the one matching keyCode. The `flags` bitmask reflects the
+            // current real state of every modifier — so even if a previous
+            // press/release event was dropped (e.g. by .tapDisabledByUserInput),
+            // the next flagsChanged here will self-heal the state machine.
             let flags = event.flags.rawValue
-
-            log("KeyMonitor: flagsChanged keyCode=\(keyCode) flags=0x\(String(flags, radix: 16))")
-
-            // Right Command key: tap = toggle History, hold = record
-            if keyCode == kRightCommand {
-                let pressed = (flags & NX_DEVICERCMDKEYMASK) != 0
-                log("KeyMonitor: Right ⌘ pressed=\(pressed)")
-                if pressed && !isRightCmdDown {
-                    isRightCmdDown = true
-                    isRightCmdRecording = false
-                    rightCmdDownTime = Date()
-
-                    // Start a hold timer — if key is still held after threshold, start recording
-                    holdTimer?.cancel()
-                    let timer = DispatchSource.makeTimerSource(queue: .main)
-                    timer.schedule(deadline: .now() + holdThreshold)
-                    timer.setEventHandler { [weak self] in
-                        guard let self = self, self.isRightCmdDown else { return }
-                        self.isRightCmdRecording = true
-                        log("KeyMonitor: Right ⌘ hold → start recording")
-                        self.onRightCmdDown?()
-                    }
-                    timer.resume()
-                    holdTimer = timer
-
-                } else if !pressed && isRightCmdDown {
-                    isRightCmdDown = false
-                    holdTimer?.cancel()
-                    holdTimer = nil
-
-                    if isRightCmdRecording {
-                        // Was recording → stop
-                        isRightCmdRecording = false
-                        onRightCmdUp?()
-                    } else {
-                        // Short press → tap → toggle History
-                        log("KeyMonitor: Right ⌘ tap → toggle History")
-                        onRightCmdTap?()
-                    }
-                }
-            }
-
-            // Right Option key
-            if keyCode == kRightOption {
-                let pressed = (flags & NX_DEVICERALTKEYMASK) != 0
-                log("KeyMonitor: Right ⌥ pressed=\(pressed)")
-                if pressed && !isRightOptDown {
-                    isRightOptDown = true
-                    rightOptDownTime = Date()
-                    otherKeyDuringRightOpt = false
-                } else if !pressed && isRightOptDown {
-                    isRightOptDown = false
-                    let duration = Date().timeIntervalSince(rightOptDownTime ?? .distantPast)
-                    if duration < tapThreshold && !otherKeyDuringRightOpt {
-                        // This is a tap — check for double tap
-                        let now = Date()
-                        if let lastTap = rightOptLastTapTime,
-                           now.timeIntervalSince(lastTap) < doubleTapWindow {
-                            // Double tap detected
-                            rightOptTapTimer?.cancel()
-                            rightOptTapTimer = nil
-                            rightOptLastTapTime = nil
-                            log("KeyMonitor: Right ⌥ double-tap → screenshot")
-                            onRightOptDoubleTap?()
-                        } else {
-                            // First tap — wait to see if double tap follows
-                            rightOptLastTapTime = now
-                            rightOptTapTimer?.cancel()
-                            let timer = DispatchSource.makeTimerSource(queue: .main)
-                            timer.schedule(deadline: .now() + doubleTapWindow)
-                            timer.setEventHandler { [weak self] in
-                                self?.rightOptLastTapTime = nil
-                                self?.rightOptTapTimer = nil
-                                log("KeyMonitor: Right ⌥ single tap → translate")
-                                self?.onRightOptTap?()
-                            }
-                            timer.resume()
-                            rightOptTapTimer = timer
-                        }
-                    }
+            for (physKey, state) in states {
+                let actualPressed = (flags & mask(for: physKey)) != 0
+                if actualPressed != state.isDown {
+                    log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) \(actualPressed ? "pressed" : "released")")
+                    handleModifier(physKey, pressed: actualPressed)
                 }
             }
         } else if type == .keyDown {
-            // Track if any other key was pressed while Right Option is held
-            if isRightOptDown {
-                otherKeyDuringRightOpt = true
+            // Also sync from flags here — if a modifier release was dropped,
+            // typing any regular key will self-heal the state machine.
+            let flags = event.flags.rawValue
+            for (physKey, state) in states {
+                let actualPressed = (flags & mask(for: physKey)) != 0
+                if actualPressed != state.isDown {
+                    log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) \(actualPressed ? "pressed" : "released") (via keyDown sync)")
+                    handleModifier(physKey, pressed: actualPressed)
+                }
+            }
+            // Any regular key pressed while a modifier is held cancels tap/double-tap.
+            for state in states.values where state.isDown {
+                state.otherKeyPressed = true
             }
         }
     }
+
+    private func mask(for key: PhysicalKey) -> UInt64 {
+        switch (key.side, key.modifier) {
+        case (.left,  .cmd):     return NX_DEVICELCMDKEYMASK
+        case (.right, .cmd):     return NX_DEVICERCMDKEYMASK
+        case (.left,  .option):  return NX_DEVICELALTKEYMASK
+        case (.right, .option):  return NX_DEVICERALTKEYMASK
+        case (.left,  .control): return NX_DEVICELCTLKEYMASK
+        case (.right, .control): return NX_DEVICERCTLKEYMASK
+        }
+    }
+
+    private func handleModifier(_ physKey: PhysicalKey, pressed: Bool) {
+        guard let actions = bindings[physKey], let state = states[physKey] else { return }
+
+        if pressed && !state.isDown {
+            state.isDown = true
+            state.downTime = Date()
+            state.holdFired = false
+            state.otherKeyPressed = false
+
+            // If this key has a .hold action, arm the hold timer.
+            if let holdAction = actions.first(where: { $0.gesture == .hold }) {
+                state.holdTimer?.cancel()
+                let timer = DispatchSource.makeTimerSource(queue: .main)
+                timer.schedule(deadline: .now() + holdThreshold)
+                timer.setEventHandler { [weak self, weak state] in
+                    guard let state = state, state.isDown else { return }
+                    state.holdFired = true
+                    log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) hold → \(holdAction.displayName)")
+                    self?.fireHoldDown(holdAction)
+                }
+                timer.resume()
+                state.holdTimer = timer
+            }
+
+        } else if !pressed && state.isDown {
+            state.isDown = false
+            state.holdTimer?.cancel()
+            state.holdTimer = nil
+
+            if state.holdFired {
+                // Was holding — release the hold action.
+                state.holdFired = false
+                if let holdAction = actions.first(where: { $0.gesture == .hold }) {
+                    fireHoldUp(holdAction)
+                }
+                return
+            }
+
+            // Short press — candidate for tap / double-tap.
+            let duration = Date().timeIntervalSince(state.downTime ?? .distantPast)
+            guard duration < tapThreshold, !state.otherKeyPressed else { return }
+
+            let tapAction = actions.first { $0.gesture == .tap }
+            let doubleTapAction = actions.first { $0.gesture == .doubleTap }
+
+            if let doubleAction = doubleTapAction {
+                // Need to distinguish tap from first-half of double-tap.
+                if let last = state.lastTapTime,
+                   Date().timeIntervalSince(last) < doubleTapWindow {
+                    // Second tap — fire double-tap immediately.
+                    state.tapTimer?.cancel()
+                    state.tapTimer = nil
+                    state.lastTapTime = nil
+                    log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) double-tap → \(doubleAction.displayName)")
+                    fireTap(doubleAction)
+                } else {
+                    // First tap — wait to see if a second follows.
+                    state.lastTapTime = Date()
+                    state.tapTimer?.cancel()
+                    let timer = DispatchSource.makeTimerSource(queue: .main)
+                    timer.schedule(deadline: .now() + doubleTapWindow)
+                    timer.setEventHandler { [weak self, weak state] in
+                        state?.lastTapTime = nil
+                        state?.tapTimer = nil
+                        if let tap = tapAction {
+                            log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) tap → \(tap.displayName)")
+                            self?.fireTap(tap)
+                        }
+                    }
+                    timer.resume()
+                    state.tapTimer = timer
+                }
+            } else if let tap = tapAction {
+                // No double-tap bound on this key — tap fires immediately.
+                log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) tap → \(tap.displayName)")
+                fireTap(tap)
+            }
+        }
+    }
+
+    // MARK: - Action dispatch
+
+    private func fireTap(_ action: HotkeyAction) {
+        switch action {
+        case .toggleHistory: onToggleHistory?()
+        case .translate:     onTranslate?()
+        case .screenshot:    onScreenshot?()
+        case .voiceInput:    break // voiceInput only uses hold
+        }
+    }
+
+    private func fireHoldDown(_ action: HotkeyAction) {
+        if action == .voiceInput { onVoiceInputDown?() }
+    }
+
+    private func fireHoldUp(_ action: HotkeyAction) {
+        if action == .voiceInput { onVoiceInputUp?() }
+    }
 }
 
-// C-compatible callback — cannot capture context, uses refcon
+// C-compatible callback — cannot capture context, uses refcon.
 private func keyMonitorCallback(
     proxy: CGEventTapProxy,
     type: CGEventType,
     event: CGEvent,
     refcon: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
-    // Handle tap being disabled by the system (e.g. timeout or permission change)
+    // Handle tap being disabled by the system (timeout or permission change).
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         log("KeyMonitor: event tap disabled by system (\(type == .tapDisabledByTimeout ? "timeout" : "userInput")), re-enabling...")
         if let refcon = refcon {
