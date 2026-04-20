@@ -14,14 +14,69 @@ jobs:
       - name: Build (Release)
         run: swift build -c release
 
-      - name: Create .app bundle
+      - name: Assemble .app bundle
         run: |
           mkdir -p Vox.app/Contents/MacOS
           mkdir -p Vox.app/Contents/Resources
           cp .build/release/Vox Vox.app/Contents/MacOS/Vox
           cp Sources/Vox/Resources/Info.plist Vox.app/Contents/Info.plist
           cp Sources/Vox/Resources/Vox.icns Vox.app/Contents/Resources/Vox.icns
-          codesign --force --deep --sign - Vox.app
+
+      - name: Import Developer ID certificate
+        if: ${{ env.BUILD_CERTIFICATE_BASE64 != '' }}
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERT_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERT_PATH
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          security import $CERT_PATH -P "$P12_PASSWORD" -A \
+            -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+      - name: Sign .app
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+        run: |
+          if [ -n "$SIGNING_IDENTITY" ]; then
+            echo "Signing with Developer ID: $SIGNING_IDENTITY"
+            codesign --force --deep \
+              --options runtime \
+              --sign "$SIGNING_IDENTITY" \
+              --entitlements Sources/Vox/Resources/Vox.entitlements \
+              Vox.app
+            codesign --verify --verbose=2 Vox.app
+          else
+            echo "⚠ No signing identity secret set — falling back to ad-hoc signing"
+            codesign --force --deep --sign - Vox.app
+          fi
+
+      - name: Notarize .app
+        if: ${{ env.NOTARY_APPLE_ID != '' }}
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: |
+          ditto -c -k --keepParent Vox.app Vox-notarize.zip
+          xcrun notarytool submit Vox-notarize.zip \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --password "$NOTARY_PASSWORD" \
+            --team-id "$NOTARY_TEAM_ID" \
+            --wait
+          xcrun stapler staple Vox.app
+          rm Vox-notarize.zip
 
       - name: Zip app
         run: ditto -c -k --keepParent Vox.app Vox.zip
@@ -42,9 +97,8 @@ jobs:
 
             1. Download `Vox.zip` and extract
             2. Move `Vox.app` to `/Applications/`
-            3. Remove quarantine: `xattr -cr /Applications/Vox.app`
-            4. Install Python dependencies: `pip install mlx-whisper huggingface_hub`
-            5. Grant permissions (Accessibility + Input Monitoring + Microphone) in System Settings
-            6. Launch from Spotlight or `/Applications/Vox.app`
+            3. If macOS complains about quarantine: `xattr -cr /Applications/Vox.app`
+            4. Grant permissions (Accessibility + Input Monitoring + Microphone) in System Settings
+            5. Launch from Spotlight or `/Applications/Vox.app`
 
-            **Requires:** Apple Silicon Mac, macOS 14+, Python 3.9+
+            **Requires:** Apple Silicon Mac, macOS 14+

@@ -5,17 +5,29 @@ Native Swift macOS menu bar app. Voice→Text (mlx_whisper), translate selection
 
 ## Build & Run
 ```bash
-swift build                          # Debug build
-swift build -c release               # Release build
-
-# Update .app bundle after build:
-cp .build/debug/Vox build/Vox.app/Contents/MacOS/Vox
-cp Sources/Vox/Resources/Info.plist build/Vox.app/Contents/Info.plist
-cp Sources/Vox/Resources/Vox.icns build/Vox.app/Contents/Resources/Vox.icns
-codesign --force --deep --sign - build/Vox.app
+# One-shot build + refresh .app + sign with stable Developer ID:
+./sign.sh                 # Debug build
+./sign.sh release         # Release build
+./sign.sh --verify        # Verify the current bundle's signature
 
 # Run:
 open build/Vox.app
+```
+
+Signing identity: `Developer ID Application: naisierding aihemaiti (ZVZ4AP4H2T)`. Because the identity is stable across rebuilds, **TCC (Accessibility + Input Monitoring) permissions persist** — no re-granting after every `swift build`.
+
+### Manual build (when not using sign.sh)
+```bash
+swift build                          # Debug
+swift build -c release               # Release
+
+cp .build/debug/Vox build/Vox.app/Contents/MacOS/Vox
+cp Sources/Vox/Resources/Info.plist build/Vox.app/Contents/Info.plist
+cp Sources/Vox/Resources/Vox.icns build/Vox.app/Contents/Resources/Vox.icns
+codesign --force --deep --options runtime \
+    --sign "Developer ID Application: naisierding aihemaiti (ZVZ4AP4H2T)" \
+    --entitlements Sources/Vox/Resources/Vox.entitlements \
+    build/Vox.app
 ```
 
 ## Release
@@ -68,11 +80,10 @@ Key codes: Right ⌘ = keyCode 54, Right ⌥ = keyCode 61. Device flags: NX_DEVI
 - Most MLX whisper models have `-mlx` suffix. Exceptions: `whisper-large-v3-turbo`, `whisper-tiny`
 
 ## Known Constraints
-- **Permission pain**: Every `swift build` produces new binary → invalidates TCC permissions (Accessibility + Input Monitoring). Must re-add in System Settings after rebuild. No developer certificate.
 - **Both permissions needed**: CGEventTap needs Input Monitoring (key events) AND Accessibility (simulating Cmd+C/V)
-- **Batch changes**: When rebuilding, batch all code changes together to minimize permission re-grants
 - **NSView `tag` conflict**: Cannot override `tag` with stored property in NSView subclass — use different name (e.g., `index`)
 - **SMAppService**: Requires app in /Applications for Launch at Login
+- **First launch after signing identity change**: TCC entries are tied to the signing identity. If you ever switch certs (e.g. revoke + recreate), all permissions need to be re-added once. Subsequent rebuilds keep TCC because the identity stays the same.
 
 ## GitHub
 - **Repo**: `nicetooo/Vox` (SSH: `git@github.com:nicetooo/Vox.git`)
@@ -96,5 +107,10 @@ Sources/Vox/
 ├── SettingsWindow.swift    # Language select, model manage, Launch at Login
 └── Resources/
     ├── Info.plist           # com.vox.app, LSUIElement=true
+    ├── Vox.entitlements     # Hardened runtime entitlements (mic, WhisperKit relaxations)
     └── Vox.icns
 ```
+
+Root-level scripts:
+- `sign.sh` — build + refresh bundle + sign with stable Developer ID
+- `release.sh` — tag + push to trigger GitHub Actions release
