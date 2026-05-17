@@ -12,6 +12,7 @@ final class RegionSelector {
     private var onSelected: ((NSRect) -> Void)?
     private var onCancel: (() -> Void)?
     private var localEscMonitor: Any?
+    private var cursorPushed = false
 
     /// Show the selector. Calls `onSelected` once the user releases a valid
     /// rectangle (≥ 10×10 px), or `onCancel` on ESC / empty selection.
@@ -54,6 +55,9 @@ final class RegionSelector {
             panel.isMovable = false
             panel.contentView = view
             panel.setFrame(screen.frame, display: false)  // ensure exact placement
+            // Needed so AppKit dispatches mouse-moved / cursor-update events
+            // even when our panel isn't the active app.
+            panel.acceptsMouseMovedEvents = true
 
             panel.orderFront(nil)
             windows.append(panel)
@@ -78,6 +82,14 @@ final class RegionSelector {
             }
             return event
         }
+
+        // Force the crosshair across the entire screen while the selector is
+        // active. addCursorRect on a borderless / nonactivating panel doesn't
+        // hold reliably — AppKit hands the cursor back to whoever else is under
+        // the pointer the moment focus shifts. push() on the global NSCursor
+        // stack overrides everything until we pop() in teardown.
+        NSCursor.crosshair.push()
+        cursorPushed = true
     }
 
     private func finish(rect: NSRect) {
@@ -95,6 +107,10 @@ final class RegionSelector {
 
     private func teardown() {
         if let m = localEscMonitor { NSEvent.removeMonitor(m); localEscMonitor = nil }
+        if cursorPushed {
+            NSCursor.pop()
+            cursorPushed = false
+        }
         for w in windows { w.orderOut(nil) }
         windows = []
         onSelected = nil
@@ -117,12 +133,36 @@ private final class RegionSelectionView: NSView {
 
     private var startPoint: NSPoint?
     private var currentPoint: NSPoint?
+    private var cursorTrackingArea: NSTrackingArea?
 
     override var acceptsFirstResponder: Bool { true }
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .crosshair)
+    // MARK: - Cursor management
+    //
+    // The legacy addCursorRect / resetCursorRects path is unreliable on borderless
+    // nonactivating panels — AppKit hands the cursor back to the underlying app
+    // the moment our panel is composited. The current-AppKit way to force a
+    // cursor over a region is a tracking area with .cursorUpdate that calls
+    // NSCursor.set() each time the cursor enters or moves within the area.
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let old = cursorTrackingArea { removeTrackingArea(old) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .cursorUpdate, .mouseEnteredAndExited, .mouseMoved],
+            owner: self, userInfo: nil
+        )
+        addTrackingArea(area)
+        cursorTrackingArea = area
     }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.crosshair.set()
+    }
+
+    override func mouseEntered(with event: NSEvent) { NSCursor.crosshair.set() }
+    override func mouseMoved(with event: NSEvent)   { NSCursor.crosshair.set() }
 
     // MARK: - Mouse
 
