@@ -1,4 +1,6 @@
 import AppKit
+import AVFoundation
+import AVKit
 
 // MARK: - Custom Panel (borderless, can become key for search input)
 
@@ -129,6 +131,9 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
     private var folderBtn: DarkActionButton?
     private var folderBtnWidth: NSLayoutConstraint?
     private var folderBtnLeading: NSLayoutConstraint?
+    /// Active inline video player, retained so we can pause it when collapsing
+    /// the row or closing the panel.
+    private var activeVideoPlayer: AVPlayer?
 
     private lazy var timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -181,6 +186,8 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
 
     func hideHistory() {
         removeKeyMonitor()
+        activeVideoPlayer?.pause()
+        activeVideoPlayer = nil
         panel?.orderOut(nil)
         panel = nil
         typeButtons = []
@@ -192,6 +199,8 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
 
     func windowWillClose(_ n: Notification) {
         removeKeyMonitor()
+        activeVideoPlayer?.pause()
+        activeVideoPlayer = nil
         panel = nil
         typeButtons = []
         expandedRow = nil
@@ -257,7 +266,7 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         pillStack.translatesAutoresizingMaskIntoConstraints = false
         typeButtons = []
 
-        for (i, label) in ["All", "Voice", "Translation", "Screenshot"].enumerated() {
+        for (i, label) in ["All", "Voice", "Translation", "Screenshot", "Recording"].enumerated() {
             let pill = PillToggle(title: label, selected: i == 0)
             pill.index = i
             pill.onClick = { [weak self] tag in self?.typeFilterTapped(tag) }
@@ -438,10 +447,12 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         updateFolderButtonVisibility()
     }
 
-    /// Folder button only makes sense when browsing screenshots — hide it otherwise
-    /// and collapse its layout space so there's no awkward gap.
+    /// Folder button only makes sense when browsing media (screenshots / recordings).
+    /// Hide it for text-only filters and collapse its layout space so there's no gap.
     private func updateFolderButtonVisibility() {
-        let show = typeFilterIndex == HistoryTypeFilter.screenshot.rawValue
+        let f = typeFilterIndex
+        let show = f == HistoryTypeFilter.screenshot.rawValue
+              || f == HistoryTypeFilter.recording.rawValue
         folderBtn?.isHidden = !show
         folderBtnWidth?.constant = show ? 64 : 0
         folderBtnLeading?.constant = show ? 8 : 0
@@ -473,10 +484,10 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         let record = records[row]
         let tableWidth = tableView.bounds.width
 
-        // Screenshot: expanded row shows the image scaled to fit (cap 240px tall).
-        if record.type == .screenshot {
+        // Media (screenshot or recording): expanded row shows preview scaled to fit (cap 240px tall).
+        if record.type == .screenshot || record.type == .recording {
             let availW = max(tableWidth - 60, 200)
-            if let path = record.imagePath, let img = NSImage(contentsOfFile: path), img.size.width > 0 {
+            if let img = previewImage(for: record), img.size.width > 0 {
                 let aspect = img.size.height / img.size.width
                 let fitH = min(availW * aspect, 240)
                 return 50 + fitH + 16  // header row + image + bottom pad
@@ -516,6 +527,9 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         case .screenshot:
             symbolName = "photo.fill"
             tint = NSColor(red: 1.0, green: 0.70, blue: 0.30, alpha: 1.0)   // orange
+        case .recording:
+            symbolName = "video.fill"
+            tint = NSColor(red: 0.85, green: 0.45, blue: 0.95, alpha: 1.0)  // purple
         }
         let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
         if let img = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
@@ -532,7 +546,7 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         text.isBordered = false
         text.isSelectable = false
         text.translatesAutoresizingMaskIntoConstraints = false
-        if isExpanded && record.type != .screenshot {
+        if isExpanded && record.type != .screenshot && record.type != .recording {
             text.lineBreakMode = .byWordWrapping
             text.maximumNumberOfLines = 0
         } else {
@@ -584,40 +598,63 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
             sep.heightAnchor.constraint(equalToConstant: 0.5),
         ])
 
-        // --- Screenshot expanded preview ---
-        if isExpanded && record.type == .screenshot {
-            let preview = NSImageView()
-            preview.translatesAutoresizingMaskIntoConstraints = false
-            preview.imageScaling = .scaleProportionallyUpOrDown
-            preview.imageAlignment = .alignTopLeft
-            preview.wantsLayer = true
-            preview.layer?.cornerRadius = 6
-            preview.layer?.masksToBounds = true
-            preview.layer?.backgroundColor = NSColor(white: 0.06, alpha: 1.0).cgColor
+        // --- Media (screenshot / recording) expanded preview ---
+        if isExpanded && (record.type == .screenshot || record.type == .recording) {
+            let mediaView: NSView
+            var hasContent = false
 
-            if let path = record.imagePath, let img = NSImage(contentsOfFile: path) {
-                preview.image = img
+            if record.type == .recording,
+               let path = record.imagePath,
+               FileManager.default.fileExists(atPath: path) {
+                // Inline video player — click play in the floating controls to play.
+                let player = AVPlayer(url: URL(fileURLWithPath: path))
+                let pv = AVPlayerView()
+                pv.player = player
+                pv.controlsStyle = .floating
+                pv.showsFullScreenToggleButton = false
+                pv.wantsLayer = true
+                pv.layer?.cornerRadius = 6
+                pv.layer?.masksToBounds = true
+                pv.layer?.backgroundColor = NSColor(white: 0.06, alpha: 1.0).cgColor
+                mediaView = pv
+                hasContent = true
+                // Pause any previously-active player and remember this one.
+                self.activeVideoPlayer?.pause()
+                self.activeVideoPlayer = player
+            } else {
+                // Screenshot or missing file → NSImageView with placeholder background.
+                let iv = NSImageView()
+                iv.imageScaling = .scaleProportionallyUpOrDown
+                iv.imageAlignment = .alignTopLeft
+                iv.wantsLayer = true
+                iv.layer?.cornerRadius = 6
+                iv.layer?.masksToBounds = true
+                iv.layer?.backgroundColor = NSColor(white: 0.06, alpha: 1.0).cgColor
+                if let img = previewImage(for: record) {
+                    iv.image = img
+                    hasContent = true
+                }
+                mediaView = iv
             }
-            cell.addSubview(preview)
 
-            // Place preview below the text row, full width inside cell padding.
+            mediaView.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(mediaView)
             NSLayoutConstraint.activate([
-                preview.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 44),
-                preview.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -14),
-                preview.topAnchor.constraint(equalTo: text.bottomAnchor, constant: 8),
-                preview.bottomAnchor.constraint(equalTo: sep.topAnchor, constant: -8),
+                mediaView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 44),
+                mediaView.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -14),
+                mediaView.topAnchor.constraint(equalTo: text.bottomAnchor, constant: 8),
+                mediaView.bottomAnchor.constraint(equalTo: sep.topAnchor, constant: -8),
             ])
 
-            // "File missing" overlay if image failed to load.
-            if preview.image == nil {
+            if !hasContent {
                 let missing = NSTextField(labelWithString: "File missing on disk")
                 missing.font = .systemFont(ofSize: 12)
                 missing.textColor = NSColor(white: 0.55, alpha: 1.0)
                 missing.translatesAutoresizingMaskIntoConstraints = false
                 cell.addSubview(missing)
                 NSLayoutConstraint.activate([
-                    missing.centerXAnchor.constraint(equalTo: preview.centerXAnchor),
-                    missing.centerYAnchor.constraint(equalTo: preview.centerYAnchor),
+                    missing.centerXAnchor.constraint(equalTo: mediaView.centerXAnchor),
+                    missing.centerYAnchor.constraint(equalTo: mediaView.centerYAnchor),
                 ])
             }
         } else {
@@ -633,6 +670,10 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         guard let table = tableView else { return }
         let clicked = table.clickedRow
         guard clicked >= 0, clicked < records.count else { return }
+
+        // Stop any inline video that's about to be torn down by the reload.
+        activeVideoPlayer?.pause()
+        activeVideoPlayer = nil
 
         var rowsToUpdate = IndexSet()
 
@@ -666,6 +707,17 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
     }
 
     @objc private func rowDoubleClicked() {
+        // For recordings, double-click opens in QuickTime / default player —
+        // more useful than copying. Other types: keep copy behavior.
+        if let table = tableView, table.clickedRow >= 0, table.clickedRow < records.count {
+            let r = records[table.clickedRow]
+            if r.type == .recording, let path = r.imagePath,
+               FileManager.default.fileExists(atPath: path) {
+                NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                log("History: opened recording in default player — \(path)")
+                return
+            }
+        }
         copySelectedToClipboard()
     }
 
@@ -711,26 +763,66 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         }
     }
 
-    /// Reveal the Screenshots folder in Finder. When a screenshot row is
-    /// selected (and its file still exists), reveal that file specifically;
-    /// otherwise just open the folder.
-    private func openScreenshotsFolder() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("Znote").appendingPathComponent("Screenshots")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    // MARK: - Preview Image Helper
 
+    /// Cache video thumbnails per path so re-expanding doesn't re-decode.
+    private static var videoThumbnailCache: [String: NSImage] = [:]
+
+    /// Returns a UI-renderable image for a media record. PNG for screenshots,
+    /// first-frame thumbnail for recordings. nil if the file is missing.
+    private func previewImage(for record: HistoryRecord) -> NSImage? {
+        guard let path = record.imagePath,
+              FileManager.default.fileExists(atPath: path) else { return nil }
+
+        switch record.type {
+        case .screenshot:
+            return NSImage(contentsOfFile: path)
+        case .recording:
+            if let cached = Self.videoThumbnailCache[path] { return cached }
+            let asset = AVURLAsset(url: URL(fileURLWithPath: path))
+            let gen = AVAssetImageGenerator(asset: asset)
+            gen.appliesPreferredTrackTransform = true
+            gen.maximumSize = CGSize(width: 1280, height: 720)
+            // Try a frame ~0.5s in so we don't get a black startup frame.
+            let times: [CMTime] = [
+                CMTime(value: 1, timescale: 2),  // 0.5s
+                .zero
+            ]
+            for t in times {
+                if let cg = try? gen.copyCGImage(at: t, actualTime: nil) {
+                    let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                    Self.videoThumbnailCache[path] = img
+                    return img
+                }
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    /// Reveal a media file in Finder when a media row is selected; otherwise
+    /// open the relevant folder (Screenshots / Recordings, picked by current filter).
+    private func openScreenshotsFolder() {
         let selected = tableView?.selectedRowIndexes ?? IndexSet()
         if let idx = selected.first, idx < records.count,
-           records[idx].type == .screenshot,
+           (records[idx].type == .screenshot || records[idx].type == .recording),
            let path = records[idx].imagePath,
            FileManager.default.fileExists(atPath: path) {
             let url = URL(fileURLWithPath: path)
             NSWorkspace.shared.activateFileViewerSelecting([url])
-            log("History: revealing screenshot \(path)")
-        } else {
-            NSWorkspace.shared.open(dir)
-            log("History: opened Screenshots folder \(dir.path)")
+            log("History: revealing \(path)")
+            return
         }
+
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let znoteDir = appSupport.appendingPathComponent("Znote")
+        let subdir = (HistoryTypeFilter(rawValue: typeFilterIndex) == .recording)
+            ? "Recordings" : "Screenshots"
+        let dir = znoteDir.appendingPathComponent(subdir)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(dir)
+        log("History: opened folder \(dir.path)")
     }
 
     private func copySelectedToClipboard() {
@@ -741,26 +833,40 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         pb.clearContents()
         var copiedLabel = "Copied!"
 
-        // Single-screenshot selection: put the image on the clipboard so it can be
-        // pasted into chat / mail / docs. (Selection is single-only by config.)
+        // Single media selection: put the actual media on the clipboard.
+        // Screenshot → NSImage (paste anywhere as image).
+        // Recording → file URL (paste into Finder / Messages / Mail as a file).
         if selected.count == 1,
            let idx = selected.first,
-           idx < records.count,
-           records[idx].type == .screenshot,
-           let path = records[idx].imagePath {
-            if let img = NSImage(contentsOfFile: path) {
-                pb.writeObjects([img])
-                log("History: copied screenshot \(path)")
+           idx < records.count {
+            let r = records[idx]
+            if r.type == .screenshot, let path = r.imagePath {
+                if let img = NSImage(contentsOfFile: path) {
+                    pb.writeObjects([img])
+                    log("History: copied screenshot \(path)")
+                } else {
+                    copiedLabel = "File missing"
+                    log("History: screenshot file missing — \(path)")
+                }
+            } else if r.type == .recording, let path = r.imagePath {
+                if FileManager.default.fileExists(atPath: path) {
+                    let url = URL(fileURLWithPath: path)
+                    pb.writeObjects([url as NSURL])
+                    log("History: copied recording file URL \(path)")
+                } else {
+                    copiedLabel = "File missing"
+                    log("History: recording file missing — \(path)")
+                }
             } else {
-                copiedLabel = "File missing"
-                log("History: screenshot file missing — \(path)")
+                pb.setString(r.copyText, forType: .string)
+                log("History: copied text")
             }
         } else {
             // Text records: join their copyText.
             let texts = selected.compactMap { idx -> String? in
                 guard idx < records.count else { return nil }
                 let r = records[idx]
-                return r.type == .screenshot ? nil : r.copyText  // skip screenshots in mixed selection
+                return (r.type == .screenshot || r.type == .recording) ? nil : r.copyText
             }
             pb.setString(texts.joined(separator: "\n"), forType: .string)
             log("History: copied \(texts.count) items")

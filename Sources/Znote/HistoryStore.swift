@@ -23,6 +23,8 @@ struct HistoryRecord {
             return outputText
         case .screenshot:
             return "Screenshot — \(outputText)"  // outputText holds filename
+        case .recording:
+            return "Recording — \(outputText)"   // outputText holds filename
         }
     }
 
@@ -35,6 +37,7 @@ enum HistoryType: String {
     case voice = "voice"
     case translation = "translation"
     case screenshot = "screenshot"
+    case recording = "recording"
 }
 
 enum HistoryTypeFilter: Int {
@@ -42,6 +45,7 @@ enum HistoryTypeFilter: Int {
     case voice = 1
     case translation = 2
     case screenshot = 3
+    case recording = 4
 
     /// nil → show everything; otherwise restrict to this type.
     var historyType: HistoryType? {
@@ -50,6 +54,7 @@ enum HistoryTypeFilter: Int {
         case .voice: return .voice
         case .translation: return .translation
         case .screenshot: return .screenshot
+        case .recording: return .recording
         }
     }
 }
@@ -135,6 +140,17 @@ class HistoryStore {
         insert(type: .screenshot, inputText: nil, outputText: filename,
                sourceLang: nil, targetLang: nil, duration: nil, imagePath: path)
         log("HistoryStore: saved screenshot record (\(filename))")
+    }
+
+    /// Save a screen recording record. `path` is the absolute .mov path on disk.
+    /// We reuse the `image_path` column (semantic: media file on disk) and
+    /// distinguish video from image via the `type` field. Optional `duration`
+    /// is the recording length in seconds — handy for UI display.
+    func addRecording(path: String, duration: Double? = nil) {
+        let filename = (path as NSString).lastPathComponent
+        insert(type: .recording, inputText: nil, outputText: filename,
+               sourceLang: nil, targetLang: nil, duration: duration, imagePath: path)
+        log("HistoryStore: saved recording record (\(filename))")
     }
 
     private func insert(type: HistoryType, inputText: String?, outputText: String,

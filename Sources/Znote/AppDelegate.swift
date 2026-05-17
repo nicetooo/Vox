@@ -20,6 +20,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var historyController: HistoryWindowController!
     private var isRecording = false
     private var recordingMode: RecordingMode = .transcribe
+    private var regionSelector: RegionSelector!
+    private var captureActionPicker: CaptureActionPicker!
+    private var screenRecorder: ScreenRecorder?
+    private var recordingStopButton: RecordingStopButton?
+    private var recordingStartedAt: Date?
 
     // MARK: - App Lifecycle
 
@@ -233,6 +238,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         translationOverlay = TranslationOverlay()
         settingsController = SettingsWindowController()
         historyController = HistoryWindowController()
+        regionSelector = RegionSelector()
+        captureActionPicker = CaptureActionPicker()
 
         // Initialize history store
         _ = HistoryStore.shared
@@ -378,7 +385,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    // MARK: - Screenshot
+    // MARK: - Screen Capture (region → screenshot or record)
 
     /// Returns the directory where screenshots are saved, creating it if necessary.
     private func screenshotsDirectory() -> URL {
@@ -388,51 +395,191 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return dir
     }
 
-    /// `screencapture -i <file>`: interactive region select → save PNG to file.
-    /// On success we also push the image bytes to the clipboard so the user can paste,
-    /// and record an entry in History pointing at the saved file.
-    /// On cancel (ESC) screencapture exits 0 but writes no file — we detect that and skip.
+    /// Triggered by Right ⌥ double-tap. Flow:
+    ///   1. Show RegionSelector — user drags out a rectangle.
+    ///   2. On selection, show CaptureActionPicker near the rect.
+    ///   3. User picks Capture (screenshot) or Record (video, Phase 2).
     private func takeScreenshot() {
+        DispatchQueue.main.async {
+            self.regionSelector.begin(
+                onSelected: { [weak self] rect in
+                    self?.handleRegionSelected(rect)
+                },
+                onCancel: {
+                    log("Capture cancelled at region select")
+                }
+            )
+        }
+    }
+
+    private func handleRegionSelected(_ rect: NSRect) {
+        captureActionPicker.show(
+            near: rect,
+            onCapture: { [weak self] in
+                self?.captureScreenshot(rect: rect)
+            },
+            onRecord: { [weak self] in
+                self?.startScreenRecording(rect: rect)
+            },
+            onCancel: {
+                log("Capture cancelled at action picker")
+            }
+        )
+    }
+
+    /// Take a PNG screenshot of `rect` (NSScreen / window coords, bottom-left origin).
+    /// Uses `screencapture -R x,y,w,h` which expects top-left origin in primary-display
+    /// pixel coords, so we convert.
+    private func captureScreenshot(rect: NSRect) {
         let timestamp = DateFormatter.screenshotTimestamp.string(from: Date())
         let filename = "screenshot-\(timestamp).png"
         let fileURL = screenshotsDirectory().appendingPathComponent(filename)
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            log("Taking screenshot → \(fileURL.path)")
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-            // -i: interactive selection
-            // -o: no shadow on window captures
-            process.arguments = ["-i", "-o", fileURL.path]
-            do {
-                try process.run()
-                process.waitUntilExit()
-            } catch {
-                log("Screenshot failed to launch: \(error)")
-                return
-            }
+        // NSScreen.frame uses bottom-left origin in a unified coordinate space.
+        // screencapture -R uses top-left origin where (0,0) is the PRIMARY display's
+        // top-left. `NSScreen.screens.first` is not guaranteed to be primary —
+        // the actual primary always has frame.origin == .zero in the NSScreen
+        // coordinate system. Use that as the reference height.
+        let primaryHeight = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.height
+            ?? NSScreen.main?.frame.height
+            ?? 0
+        let cgRect = CGRect(
+            x: rect.minX,
+            y: primaryHeight - rect.maxY,
+            width: rect.width,
+            height: rect.height
+        )
 
-            // screencapture exits 0 even when user cancels with ESC; check the file.
-            guard FileManager.default.fileExists(atPath: fileURL.path),
-                  let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
-                log("Screenshot cancelled or empty file — skipping.")
-                // Clean up zero-byte files screencapture sometimes leaves behind.
-                try? FileManager.default.removeItem(at: fileURL)
-                return
-            }
-
-            // Put the image on the clipboard so the user can paste right away.
-            DispatchQueue.main.async {
-                let pb = NSPasteboard.general
-                pb.clearContents()
-                if let image = NSImage(data: data) {
-                    pb.writeObjects([image])
-                } else {
-                    pb.setData(data, forType: .png)
+        // Give the AppKit compositor a frame or two to actually remove the
+        // CaptureActionPicker panel before launching screencapture — orderOut
+        // returns synchronously but the window may still be in the framebuffer
+        // for ~16ms. Without this we sometimes catch a faint picker outline at
+        // the edge of the screenshot.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            DispatchQueue.global(qos: .userInitiated).async {
+                log("captureScreenshot: NSRect=\(rect) → screencapture rect=\(cgRect) → \(fileURL.path)")
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                let rArg = "\(Int(cgRect.origin.x.rounded())),\(Int(cgRect.origin.y.rounded())),\(Int(cgRect.width.rounded())),\(Int(cgRect.height.rounded()))"
+                process.arguments = ["-R", rArg, "-o", "-x", fileURL.path]
+                // -R: rect; -o: no shadow; -x: don't play camera shutter sound
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                } catch {
+                    log("Screenshot failed to launch: \(error)")
+                    return
                 }
-                log("Screenshot copied to clipboard (\(data.count) bytes)")
 
-                HistoryStore.shared.addScreenshot(path: fileURL.path)
+                guard FileManager.default.fileExists(atPath: fileURL.path),
+                      let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
+                    log("Screenshot empty/missing — skipping.")
+                    try? FileManager.default.removeItem(at: fileURL)
+                    return
+                }
+
+                DispatchQueue.main.async {
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    if let image = NSImage(data: data) {
+                        pb.writeObjects([image])
+                    } else {
+                        pb.setData(data, forType: .png)
+                    }
+                    log("Screenshot copied to clipboard (\(data.count) bytes)")
+                    HistoryStore.shared.addScreenshot(path: fileURL.path)
+                }
+            }
+        }
+    }
+
+    /// Returns the directory where screen recordings are saved.
+    private func recordingsDirectory() -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("Znote").appendingPathComponent("Recordings")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Start a screen recording bounded to `rect` (NSScreen / window coords).
+    /// Shows a floating stop control; user clicks it (or presses ESC) to finish.
+    /// The first time the user records, macOS will prompt for Screen Recording
+    /// permission — start() throws and we surface the system dialog requirement.
+    private func startScreenRecording(rect: NSRect) {
+        // If already recording, do nothing — the user must stop the current
+        // one via the floating button first.
+        if screenRecorder != nil {
+            log("startScreenRecording: already recording, ignoring")
+            return
+        }
+
+        let timestamp = DateFormatter.screenshotTimestamp.string(from: Date())
+        let output = recordingsDirectory().appendingPathComponent("recording-\(timestamp).mov")
+
+        let recorder = ScreenRecorder()
+        self.screenRecorder = recorder
+        self.recordingStartedAt = Date()
+
+        Task { [weak self] in
+            do {
+                try await recorder.start(region: rect, output: output)
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
+                    // Show floating stop control.
+                    let btn = RecordingStopButton()
+                    btn.show { [weak self] in self?.stopScreenRecording() }
+                    self.recordingStopButton = btn
+                    log("Recording started → \(output.path)")
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
+                    self.screenRecorder = nil
+                    self.recordingStartedAt = nil
+                    log("startScreenRecording failed: \(error.localizedDescription)")
+
+                    let alert = NSAlert()
+                    alert.messageText = "Couldn't start recording"
+                    let msg = error.localizedDescription
+                    if msg.lowercased().contains("permission") || msg.lowercased().contains("declined") {
+                        alert.informativeText = "Znote needs Screen Recording permission.\n\nSystem Settings → Privacy & Security → Screen Recording → enable Znote, then try again."
+                    } else {
+                        alert.informativeText = msg
+                    }
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "Open System Settings")
+                    alert.addButton(withTitle: "Cancel")
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopScreenRecording() {
+        guard let recorder = screenRecorder else { return }
+        let started = recordingStartedAt
+        let stopBtn = recordingStopButton
+        self.recordingStopButton = nil  // hide control immediately to avoid double-click
+        stopBtn?.hide()
+
+        Task { [weak self] in
+            let url = await recorder.stop()
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
+                self.screenRecorder = nil
+                self.recordingStartedAt = nil
+
+                if let url = url {
+                    let duration = started.map { Date().timeIntervalSince($0) }
+                    HistoryStore.shared.addRecording(path: url.path, duration: duration)
+                    log("Recording saved \(url.path), duration=\(duration ?? 0)s")
+                } else {
+                    log("Recording stop returned nil URL — write may have failed")
+                }
             }
         }
     }
