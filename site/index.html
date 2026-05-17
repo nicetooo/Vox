@@ -26,14 +26,15 @@
     <p class="sub-tagline">100% on-device · No cloud · No subscription · Apple Silicon optimized</p>
 
     <div class="cta-row">
-      <a id="download-btn" class="btn primary" href="https://github.com/nicetooo/Znote/releases/latest/download/Znote.dmg" rel="noopener">
-        Download for macOS<span class="btn-version" id="download-version">v0.6.0</span>
+      <a id="download-btn" class="btn primary btn-download" href="https://github.com/nicetooo/Znote/releases/latest/download/Znote.dmg" rel="noopener">
+        <span class="btn-title">Download for macOS</span>
+        <span class="btn-sub" id="download-version">v0.6.0 · Apple Silicon</span>
       </a>
       <a class="btn ghost" href="https://github.com/nicetooo/Znote" target="_blank" rel="noopener">
         View on GitHub
       </a>
     </div>
-    <p class="req-note">Apple Silicon · macOS 14+</p>
+    <p class="req-note">Requires macOS 14 or later</p>
   </section>
 
   <!-- Features -->
@@ -159,7 +160,7 @@
     .then(data => {
       if (!data || !data.tag_name) return;
       const el = document.getElementById('download-version');
-      if (el) el.textContent = data.tag_name;
+      if (el) el.textContent = data.tag_name + ' · Apple Silicon';
     })
     .catch(() => { /* fall back to hardcoded version */ });
 </script>
