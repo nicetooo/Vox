@@ -19,7 +19,15 @@ class WhisperService {
 
     /// Transcribe audio file. Returns the text or nil on failure.
     /// Call from a Task {} context (async).
-    func transcribe(audioPath: String) async -> String? {
+    ///
+    /// - Parameters:
+    ///   - audioPath: PCM file produced by AudioRecorder.
+    ///   - translate: When true, switch Whisper into `task=translate` mode.
+    ///     The decoder outputs ENGLISH text regardless of the spoken language —
+    ///     this is Whisper's native any-language → English translation. Source
+    ///     language verification + Chinese conversion are skipped in this mode
+    ///     because the output is always English by definition.
+    func transcribe(audioPath: String, translate: Bool = false) async -> String? {
         guard FileManager.default.fileExists(atPath: audioPath) else {
             log("Whisper: audio file not found: \(audioPath)")
             return nil
@@ -27,7 +35,7 @@ class WhisperService {
 
         // Ensure model is loaded
         let model = Settings.shared.whisperModel
-        log("Whisper: transcribe called, model=\(model), loaded=\(loadedModel), kit=\(whisperKit == nil ? "nil" : "ok"), isLoading=\(isLoading)")
+        log("Whisper: transcribe called, model=\(model), loaded=\(loadedModel), kit=\(whisperKit == nil ? "nil" : "ok"), isLoading=\(isLoading), translate=\(translate)")
         if whisperKit == nil || loadedModel != model {
             guard await loadModel(model) else { return nil }
         }
@@ -40,8 +48,18 @@ class WhisperService {
         // Build decoding options
         let forcedLang = Settings.shared.whisperLanguageArg
         var options = DecodingOptions()
-        options.language = forcedLang
-        options.detectLanguage = (forcedLang == nil)
+        // In translate mode we let Whisper auto-detect the source language —
+        // forcing the source here also works, but auto is more robust when the
+        // user holds the translate hotkey and switches between Chinese / French
+        // / etc. without changing Settings.
+        if translate {
+            options.task = .translate
+            options.language = nil
+            options.detectLanguage = true
+        } else {
+            options.language = forcedLang
+            options.detectLanguage = (forcedLang == nil)
+        }
         options.verbose = false
         options.suppressBlank = true
         // Thresholds tuned to suppress hallucinations on silence
@@ -56,7 +74,8 @@ class WhisperService {
         options.wordTimestamps = false
         options.temperatureFallbackCount = 0
 
-        log("Whisper: transcribing (model: \(model), lang: \(forcedLang ?? "auto"))...")
+        let modeLabel = translate ? "translate→en" : "transcribe"
+        log("Whisper: \(modeLabel) (model: \(model), lang: \(forcedLang ?? "auto"))...")
         let startTime = Date()
 
         do {
@@ -86,8 +105,11 @@ class WhisperService {
             }
             log("Whisper: done in \(elapsed)s, detected=\(detectedLang), segments=\(result.segments.count)→\(filteredSegments.count), text=\(rawText.prefix(100))")
 
-            // If auto-detecting, verify result language matches user's selection
-            if forcedLang == nil && !Settings.shared.selectedLanguages.isEmpty {
+            // Language verification + retry only makes sense in transcribe mode —
+            // in translate mode the OUTPUT language is always English by design,
+            // so checking against the user's `selectedLanguages` (which describes
+            // input languages) would always fail and trigger pointless retries.
+            if !translate, forcedLang == nil, !Settings.shared.selectedLanguages.isEmpty {
                 let cleaned = cleanupTranscription(rawText)
                 if !isLanguageExpected(cleaned) {
                     if let retryLang = bestRetryLanguage() {
@@ -109,7 +131,10 @@ class WhisperService {
                 log("Whisper: result empty after hallucination filtering, discarding")
                 return nil
             }
-            finalText = convertChineseIfNeeded(finalText)
+            // Skip Hans/Hant conversion in translate mode (output is English).
+            if !translate {
+                finalText = convertChineseIfNeeded(finalText)
+            }
             log("Whisper: result = \"\(finalText)\"")
             return finalText
 
@@ -172,6 +197,19 @@ class WhisperService {
         whisperKit = nil
         loadedModel = ""
         log("Whisper: model unloaded")
+    }
+
+    /// Whether a given Whisper variant supports the `task=translate` decoding mode.
+    /// OpenAI's Sep 2024 Turbo release (`large-v3-v20240930`) dropped translation
+    /// training to win ~8× speed. All other "standard" Whisper variants do support
+    /// translate — large-v3, small, medium, etc.
+    static func supportsTranslate(_ variant: String) -> Bool {
+        let lower = variant.lowercased()
+        // Turbo flavours — OpenAI's Sep-2024 release and any "*turbo*" naming.
+        if lower.contains("v20240930") || lower.contains("turbo") {
+            return false
+        }
+        return true
     }
 
     /// Pick compute units per variant. large-v* are forced to CPU+GPU because

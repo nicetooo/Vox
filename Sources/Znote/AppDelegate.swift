@@ -19,6 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsController: SettingsWindowController!
     private var historyController: HistoryWindowController!
     private var isRecording = false
+    private var recordingMode: RecordingMode = .transcribe
 
     // MARK: - App Lifecycle
 
@@ -248,7 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         whisperService.onModelReady = { [weak self] in
             guard let self = self, self.isRecording else { return }
             log("Model became ready during recording — switching overlay to waveform")
-            self.recordingOverlay.show()
+            self.recordingOverlay.show(hint: self.recordingMode == .translate ? "→ English" : nil)
         }
     }
 
@@ -257,11 +258,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func setupKeyMonitor() {
         keyMonitor = KeyMonitor()
 
-        keyMonitor.onVoiceInputDown = { [weak self] in self?.startRecording() }
-        keyMonitor.onVoiceInputUp = { [weak self] in self?.stopRecordingAndTranscribe() }
-        keyMonitor.onToggleHistory = { [weak self] in self?.toggleHistory() }
-        keyMonitor.onTranslate = { [weak self] in self?.translateSelection() }
-        keyMonitor.onScreenshot = { [weak self] in self?.takeScreenshot() }
+        keyMonitor.onVoiceInputDown     = { [weak self] in self?.startRecording(mode: .transcribe) }
+        keyMonitor.onVoiceInputUp       = { [weak self] in self?.stopRecordingAndProcess() }
+        keyMonitor.onVoiceTranslateDown = { [weak self] in self?.startRecording(mode: .translate) }
+        keyMonitor.onVoiceTranslateUp   = { [weak self] in self?.stopRecordingAndProcess() }
+        keyMonitor.onToggleHistory      = { [weak self] in self?.toggleHistory() }
+        keyMonitor.onTranslate          = { [weak self] in self?.translateSelection() }
+        keyMonitor.onScreenshot         = { [weak self] in self?.takeScreenshot() }
 
         keyMonitor.start()
     }
@@ -273,9 +276,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Voice Input
 
-    private func startRecording() {
+    /// Two modes share the same recording pipeline; `mode` controls which
+    /// Whisper task runs after the user releases the hotkey.
+    private func startRecording(mode: RecordingMode) {
         guard !isRecording else { return }
+
+        // Translate mode needs a model that supports task=translate.
+        // Turbo (large-v3-v20240930) doesn't — OpenAI dropped translation
+        // when they shrunk the decoder for speed. Fail fast with a clear
+        // message instead of silently transcribing in the source language.
+        if mode == .translate {
+            let model = Settings.shared.whisperModel
+            if !WhisperService.supportsTranslate(model) {
+                log("startRecording: model '\(model)' doesn't support translate — aborting")
+                DispatchQueue.main.async {
+                    NSSound(named: "Frog")?.play()
+                    self.recordingOverlay.showMessage("Turbo can't translate.\nSwitch to Large V3 in Settings.")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                        self?.recordingOverlay.hide()
+                    }
+                }
+                return
+            }
+        }
+
         isRecording = true
+        recordingMode = mode
         DispatchQueue.main.async {
             self.updateState(.recording)
             NSSound(named: "Tink")?.play()
@@ -284,15 +310,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 log("Model not ready, showing loading message...")
                 self.recordingOverlay.showMessage("Loading model...")
             } else {
-                self.recordingOverlay.show()
+                self.recordingOverlay.show(hint: mode == .translate ? "→ English" : nil)
             }
             self.audioRecorder.startRecording()
-            log("Recording...")
+            log("Recording (mode: \(mode))...")
         }
     }
 
-    private func stopRecordingAndTranscribe() {
+    private func stopRecordingAndProcess() {
         guard isRecording else { return }
+        let mode = recordingMode
         isRecording = false
         DispatchQueue.main.async {
             self.audioRecorder.stopRecording()
@@ -308,7 +335,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
             NSSound(named: "Pop")?.play()
             self.updateState(.processing)
-            log("Transcribing...")
+            log("\(mode == .translate ? "Translating" : "Transcribing")...")
 
             let audioPath = self.audioRecorder.outputPath
             let whisper = self.whisperService!
@@ -332,12 +359,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     _ = await whisper.loadModel(model)
                 }
 
-                let text = await whisper.transcribe(audioPath: audioPath)
+                let text = await whisper.transcribe(audioPath: audioPath, translate: mode == .translate)
                 await MainActor.run {
                     self.recordingOverlay.hide()
                     if let text = text, !text.isEmpty {
                         log("Result: \(text)")
                         integration.pasteText(text)
+                        // Both modes write to the voice history. The translated
+                        // English text is just another voice transcript from
+                        // the user's perspective.
                         HistoryStore.shared.addVoice(text: text)
                     } else {
                         log("No speech detected.")
@@ -450,6 +480,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
     }
+}
+
+// MARK: - Recording Mode
+
+/// What to do with the audio captured during a push-to-talk hold.
+///   - `.transcribe` (Right ⌘ hold): output original-language text.
+///   - `.translate`  (Right ⌥ hold): use Whisper's built-in any-language →
+///     English task, output English text.
+enum RecordingMode: String {
+    case transcribe
+    case translate
 }
 
 // MARK: - Helpers

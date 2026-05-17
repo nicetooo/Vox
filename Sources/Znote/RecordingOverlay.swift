@@ -8,9 +8,12 @@ class RecordingOverlay {
     private var audioLevel: Float = 0.0
 
     private var messageLabel: NSTextField?
+    private var hintLabel: NSTextField?
 
-    func show() {
-        showOverlay(mode: .recording)
+    /// Show the waveform. `hint` is an optional small label (e.g. "→ English")
+    /// shown above the waveform — used to indicate Whisper's translate mode.
+    func show(hint: String? = nil) {
+        showOverlay(mode: .recording(hint: hint))
     }
 
     /// Show a text message (e.g. "Loading model...") instead of waveform
@@ -19,7 +22,7 @@ class RecordingOverlay {
     }
 
     private enum OverlayMode {
-        case recording
+        case recording(hint: String?)
         case message(String)
     }
 
@@ -27,13 +30,15 @@ class RecordingOverlay {
         // If already showing, just update content
         if let window = window {
             switch mode {
-            case .recording:
+            case .recording(let hint):
                 messageLabel?.isHidden = true
                 waveformView?.isHidden = false
+                applyHint(hint)
                 startAnimation()
             case .message(let text):
                 stopAnimation()
                 waveformView?.isHidden = true
+                hintLabel?.isHidden = true
                 if let label = messageLabel {
                     label.stringValue = text
                     label.isHidden = false
@@ -73,6 +78,18 @@ class RecordingOverlay {
         label.isHidden = true
         self.messageLabel = label
 
+        // Hint label — small text shown top-right corner of the inner container
+        // ("→ English" in translate mode). Hidden by default.
+        let hint = NSTextField(labelWithString: "")
+        let hintHeight: CGFloat = 14
+        hint.frame = NSRect(x: innerWidth - 100, y: innerHeight - hintHeight - 4,
+                            width: 96, height: hintHeight)
+        hint.alignment = .right
+        hint.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        hint.textColor = NSColor(red: 0.55, green: 0.80, blue: 1.0, alpha: 1.0)
+        hint.isHidden = true
+        self.hintLabel = hint
+
         let glowColor = NSColor(red: 0.55, green: 0.80, blue: 1.0, alpha: 1.0).cgColor
 
         // Outer diffuse halo: wide soft glow. Its large radius spreads light
@@ -108,6 +125,7 @@ class RecordingOverlay {
         container.layer?.shadowPath = shadowPath
         container.addSubview(waveform)
         container.addSubview(label)
+        container.addSubview(hint)
 
         // Outer transparent host: halo goes first (behind), container on top.
         let outer = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
@@ -142,14 +160,26 @@ class RecordingOverlay {
         self.window = panel
 
         switch mode {
-        case .recording:
+        case .recording(let hintText):
             messageLabel?.isHidden = true
             waveformView?.isHidden = false
+            applyHint(hintText)
             startAnimation()
         case .message(let text):
             waveformView?.isHidden = true
+            hintLabel?.isHidden = true
             label.stringValue = text
             label.isHidden = false
+        }
+    }
+
+    private func applyHint(_ text: String?) {
+        guard let label = hintLabel else { return }
+        if let text = text, !text.isEmpty {
+            label.stringValue = text
+            label.isHidden = false
+        } else {
+            label.isHidden = true
         }
     }
 
@@ -158,6 +188,7 @@ class RecordingOverlay {
         window?.orderOut(nil)
         window = nil
         waveformView = nil
+        hintLabel = nil
     }
 
     /// Update with current audio level (0.0 to 1.0)

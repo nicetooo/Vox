@@ -33,7 +33,7 @@ class Settings {
             name: "large-v3-v20240930",
             displayName: "Large V3 Turbo",
             size: "~1.6 GB",
-            note: "~8× faster · multilingual · weaker punctuation/casing"
+            note: "~8× faster · multilingual · no translate · weaker punctuation"
         ),
         WhisperModelInfo(
             name: "small",
@@ -330,11 +330,12 @@ enum HotkeyGesture: String, CaseIterable {
 }
 
 enum HotkeyAction: String, CaseIterable {
-    case voiceInput, toggleHistory, translate, screenshot
+    case voiceInput, voiceTranslate, toggleHistory, translate, screenshot
 
     var displayName: String {
         switch self {
         case .voiceInput: return "Voice Input"
+        case .voiceTranslate: return "Voice → English"
         case .toggleHistory: return "Toggle History"
         case .translate: return "Translate Selection"
         case .screenshot: return "Screenshot"
@@ -344,17 +345,18 @@ enum HotkeyAction: String, CaseIterable {
     /// Default gesture (used when user hasn't customized it).
     var defaultGesture: HotkeyGesture {
         switch self {
-        case .voiceInput: return .hold
+        case .voiceInput, .voiceTranslate: return .hold
         case .toggleHistory, .translate: return .tap
         case .screenshot: return .doubleTap
         }
     }
 
-    /// Gestures the user may pick from. voiceInput is locked to .hold; others
-    /// may swap freely between tap and double-tap.
+    /// Gestures the user may pick from. voiceInput and voiceTranslate are
+    /// locked to .hold (push-to-talk semantics); others swap between tap and
+    /// double-tap.
     var allowedGestures: [HotkeyGesture] {
         switch self {
-        case .voiceInput: return [.hold]
+        case .voiceInput, .voiceTranslate: return [.hold]
         case .toggleHistory, .translate, .screenshot: return [.tap, .doubleTap]
         }
     }
@@ -364,7 +366,10 @@ enum HotkeyAction: String, CaseIterable {
         switch self {
         case .voiceInput, .toggleHistory:
             base = HotkeyBinding(side: .right, modifier: .cmd, gesture: defaultGesture)
-        case .translate, .screenshot:
+        case .voiceTranslate, .translate, .screenshot:
+            // All option-modifier: voiceTranslate gets hold, translate gets tap,
+            // screenshot gets double-tap. Three gestures on one physical key —
+            // KeyMonitor's binding map supports it.
             base = HotkeyBinding(side: .right, modifier: .option, gesture: defaultGesture)
         }
         return base

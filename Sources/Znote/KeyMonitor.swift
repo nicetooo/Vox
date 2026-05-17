@@ -6,11 +6,13 @@ import Foundation
 /// Bindings come from Settings and can be reloaded live via `reloadBindings()`.
 class KeyMonitor {
     // MARK: - Action callbacks
-    var onVoiceInputDown: (() -> Void)?   // hold start (after holdThreshold)
-    var onVoiceInputUp: (() -> Void)?     // hold release
-    var onToggleHistory: (() -> Void)?    // tap
-    var onTranslate: (() -> Void)?        // tap
-    var onScreenshot: (() -> Void)?       // double-tap
+    var onVoiceInputDown: (() -> Void)?       // hold start (after holdThreshold)
+    var onVoiceInputUp: (() -> Void)?         // hold release
+    var onVoiceTranslateDown: (() -> Void)?   // hold start — voice → English
+    var onVoiceTranslateUp: (() -> Void)?     // hold release — voice → English
+    var onToggleHistory: (() -> Void)?        // tap
+    var onTranslate: (() -> Void)?            // tap
+    var onScreenshot: (() -> Void)?           // double-tap
 
     // MARK: - Thresholds
     private let tapThreshold: TimeInterval = 0.3
@@ -252,19 +254,28 @@ class KeyMonitor {
 
     private func fireTap(_ action: HotkeyAction) {
         switch action {
-        case .toggleHistory: onToggleHistory?()
-        case .translate:     onTranslate?()
-        case .screenshot:    onScreenshot?()
-        case .voiceInput:    break // voiceInput only uses hold
+        case .toggleHistory:  onToggleHistory?()
+        case .translate:      onTranslate?()
+        case .screenshot:     onScreenshot?()
+        case .voiceInput,
+             .voiceTranslate: break  // hold-only actions
         }
     }
 
     private func fireHoldDown(_ action: HotkeyAction) {
-        if action == .voiceInput { onVoiceInputDown?() }
+        switch action {
+        case .voiceInput:     onVoiceInputDown?()
+        case .voiceTranslate: onVoiceTranslateDown?()
+        default: break
+        }
     }
 
     private func fireHoldUp(_ action: HotkeyAction) {
-        if action == .voiceInput { onVoiceInputUp?() }
+        switch action {
+        case .voiceInput:     onVoiceInputUp?()
+        case .voiceTranslate: onVoiceTranslateUp?()
+        default: break
+        }
     }
 }
 
