@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>com.vox.app</string>
+	<string>com.znote.app</string>
 	<key>CFBundleName</key>
-	<string>Vox</string>
+	<string>Znote</string>
 	<key>CFBundleExecutable</key>
-	<string>Vox</string>
+	<string>Znote</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -19,10 +19,10 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleIconFile</key>
-	<string>Vox</string>
+	<string>Znote</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Vox needs microphone access to record your voice for transcription.</string>
+	<string>Znote needs microphone access to record your voice for transcription.</string>
 </dict>
 </plist>

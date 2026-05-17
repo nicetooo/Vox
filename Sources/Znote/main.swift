@@ -4,7 +4,7 @@ import Foundation
 // Log to file since stdout is swallowed in GUI apps
 func log(_ msg: String) {
     let line = "[\(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium))] \(msg)\n"
-    let logPath = "/tmp/va.log"
+    let logPath = "/tmp/znote.log"
     if let handle = FileHandle(forWritingAtPath: logPath) {
         handle.seekToEndOfFile()
         handle.write(line.data(using: .utf8)!)

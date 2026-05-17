@@ -119,11 +119,11 @@ class Settings {
 
     // MARK: - WhisperKit Model Management
 
-    /// Model storage directory — ~/Library/Application Support/Vox/Models/
+    /// Model storage directory — ~/Library/Application Support/Znote/Models/
     /// NOT ~/Documents (macOS privacy restricted)
     static let modelStorageDir: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("Vox/Models")
+        let dir = appSupport.appendingPathComponent("Znote/Models")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         log("Model storage: \(dir.path)")
         return dir

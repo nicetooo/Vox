@@ -69,7 +69,7 @@ class HistoryStore {
 
     private func openDatabase() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = appSupport.appendingPathComponent("Vox")
+        let appDir = appSupport.appendingPathComponent("Znote")
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
         let dbPath = appDir.appendingPathComponent("history.sqlite").path
 

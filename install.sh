@@ -2,7 +2,7 @@
 set -e
 
 # =============================================================================
-# Vox Installer
+# Znote Installer
 # macOS menu bar app: voice-to-text + translation
 # Requires: Apple Silicon Mac, macOS 14+
 # =============================================================================
@@ -20,7 +20,7 @@ fail()  { echo -e "${RED}✗ $1${NC}"; exit 1; }
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║              Vox Installer               ║"
+echo "║             Znote Installer              ║"
 echo "║   Voice → Text  |  Translate Selection   ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
@@ -30,7 +30,7 @@ echo ""
 
 # --- Check Apple Silicon ---
 if [[ "$(uname -m)" != "arm64" ]]; then
-    fail "Vox requires Apple Silicon (M1/M2/M3/M4). MLX does not run on Intel Macs."
+    fail "Znote requires Apple Silicon (M1/M2/M3/M4). MLX does not run on Intel Macs."
 fi
 ok "Apple Silicon detected"
 
@@ -106,49 +106,49 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Check if running from the cloned repo
-if [[ -f "$SCRIPT_DIR/Package.swift" && -d "$SCRIPT_DIR/Sources/Vox" ]]; then
+if [[ -f "$SCRIPT_DIR/Package.swift" && -d "$SCRIPT_DIR/Sources/Znote" ]]; then
     INSTALL_DIR="$SCRIPT_DIR"
     ok "Building from current directory: $INSTALL_DIR"
 else
     # Clone the repo
-    INSTALL_DIR="$HOME/.local/share/Vox"
+    INSTALL_DIR="$HOME/.local/share/Znote"
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         info "Updating existing installation..."
         cd "$INSTALL_DIR"
         git pull
     else
-        info "Cloning Vox..."
+        info "Cloning Znote..."
         mkdir -p "$(dirname "$INSTALL_DIR")"
-        git clone https://github.com/nicetooo/Vox.git "$INSTALL_DIR"
+        git clone https://github.com/nicetooo/Znote.git "$INSTALL_DIR"
     fi
 fi
 
 cd "$INSTALL_DIR"
 
 # --- Build ---
-info "Building Vox (this may take a moment)..."
+info "Building Znote (this may take a moment)..."
 swift build 2>&1 | tail -3
 ok "Build complete"
 
 # --- Create .app bundle ---
 info "Creating app bundle..."
-APP_DIR="build/Vox.app"
+APP_DIR="build/Znote.app"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
-cp .build/debug/Vox "$APP_DIR/Contents/MacOS/Vox"
-cp Sources/Vox/Resources/Info.plist "$APP_DIR/Contents/Info.plist"
-cp Sources/Vox/Resources/Vox.icns "$APP_DIR/Contents/Resources/Vox.icns"
+cp .build/debug/Znote "$APP_DIR/Contents/MacOS/Znote"
+cp Sources/Znote/Resources/Info.plist "$APP_DIR/Contents/Info.plist"
+cp Sources/Znote/Resources/Znote.icns "$APP_DIR/Contents/Resources/Znote.icns"
 codesign --force --deep --sign - "$APP_DIR" 2>/dev/null
 ok "App bundle created"
 
 # --- Install to /Applications ---
 info "Installing to /Applications..."
-if [[ -d "/Applications/Vox.app" ]]; then
-    rm -rf "/Applications/Vox.app"
+if [[ -d "/Applications/Znote.app" ]]; then
+    rm -rf "/Applications/Znote.app"
 fi
-cp -R "$APP_DIR" "/Applications/Vox.app"
+cp -R "$APP_DIR" "/Applications/Znote.app"
 # Remove quarantine flag so macOS doesn't block it
-xattr -cr "/Applications/Vox.app" 2>/dev/null || true
-ok "Installed to /Applications/Vox.app"
+xattr -cr "/Applications/Znote.app" 2>/dev/null || true
+ok "Installed to /Applications/Znote.app"
 
 # --- Done ---
 echo ""
@@ -159,17 +159,17 @@ echo ""
 echo -e "${YELLOW}IMPORTANT: Grant these permissions before first use:${NC}"
 echo ""
 echo "  1. System Settings → Privacy & Security → Accessibility"
-echo "     → Click '+' → Add Vox from /Applications"
+echo "     → Click '+' → Add Znote from /Applications"
 echo ""
 echo "  2. System Settings → Privacy & Security → Input Monitoring"
-echo "     → Click '+' → Add Vox from /Applications"
+echo "     → Click '+' → Add Znote from /Applications"
 echo ""
 echo "  3. System Settings → Privacy & Security → Microphone"
-echo "     → Allow Vox"
+echo "     → Allow Znote"
 echo ""
 echo -e "${GREEN}Usage:${NC}"
 echo "  Hold Right ⌘ — Voice to text (push-to-talk)"
 echo "  Tap Right ⌥  — Translate selected text"
 echo ""
-echo -e "Launch: ${BLUE}open /Applications/Vox.app${NC}"
+echo -e "Launch: ${BLUE}open /Applications/Znote.app${NC}"
 echo ""

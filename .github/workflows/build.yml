@@ -19,11 +19,11 @@ jobs:
 
       - name: Assemble .app bundle
         run: |
-          mkdir -p Vox.app/Contents/MacOS
-          mkdir -p Vox.app/Contents/Resources
-          cp .build/release/Vox Vox.app/Contents/MacOS/Vox
-          cp Sources/Vox/Resources/Info.plist Vox.app/Contents/Info.plist
-          cp Sources/Vox/Resources/Vox.icns Vox.app/Contents/Resources/Vox.icns
+          mkdir -p Znote.app/Contents/MacOS
+          mkdir -p Znote.app/Contents/Resources
+          cp .build/release/Znote Znote.app/Contents/MacOS/Znote
+          cp Sources/Znote/Resources/Info.plist Znote.app/Contents/Info.plist
+          cp Sources/Znote/Resources/Znote.icns Znote.app/Contents/Resources/Znote.icns
 
       - name: Import Developer ID certificate
         if: ${{ env.BUILD_CERTIFICATE_BASE64 != '' }}
@@ -57,12 +57,12 @@ jobs:
             codesign --force --deep \
               --options runtime \
               --sign "$SIGNING_IDENTITY" \
-              --entitlements Sources/Vox/Resources/Vox.entitlements \
-              Vox.app
-            codesign --verify --verbose=2 Vox.app
+              --entitlements Sources/Znote/Resources/Znote.entitlements \
+              Znote.app
+            codesign --verify --verbose=2 Znote.app
           else
             echo "⚠ No signing identity secret set — falling back to ad-hoc signing"
-            codesign --force --deep --sign - Vox.app
+            codesign --force --deep --sign - Znote.app
           fi
 
       - name: Notarize .app
@@ -72,36 +72,36 @@ jobs:
           NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
           NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
         run: |
-          ditto -c -k --keepParent Vox.app Vox-notarize.zip
-          xcrun notarytool submit Vox-notarize.zip \
+          ditto -c -k --keepParent Znote.app Znote-notarize.zip
+          xcrun notarytool submit Znote-notarize.zip \
             --apple-id "$NOTARY_APPLE_ID" \
             --password "$NOTARY_PASSWORD" \
             --team-id "$NOTARY_TEAM_ID" \
             --wait
-          xcrun stapler staple Vox.app
-          rm Vox-notarize.zip
+          xcrun stapler staple Znote.app
+          rm Znote-notarize.zip
 
       - name: Zip app
-        run: ditto -c -k --keepParent Vox.app Vox.zip
+        run: ditto -c -k --keepParent Znote.app Znote.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Vox.app
-          path: Vox.zip
+          name: Znote.app
+          path: Znote.zip
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: Vox.zip
+          files: Znote.zip
           body: |
             ## Install
 
-            1. Download `Vox.zip` and extract
-            2. Move `Vox.app` to `/Applications/`
-            3. If macOS complains about quarantine: `xattr -cr /Applications/Vox.app`
+            1. Download `Znote.zip` and extract
+            2. Move `Znote.app` to `/Applications/`
+            3. If macOS complains about quarantine: `xattr -cr /Applications/Znote.app`
             4. Grant permissions (Accessibility + Input Monitoring + Microphone) in System Settings
-            5. Launch from Spotlight or `/Applications/Vox.app`
+            5. Launch from Spotlight or `/Applications/Znote.app`
 
             **Requires:** Apple Silicon Mac, macOS 14+

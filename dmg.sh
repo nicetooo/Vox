@@ -1,24 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 
-# ── Vox DMG builder ────────────────────────────────────────
+# ── Znote DMG builder ──────────────────────────────────────
 #
-# Wraps the already-signed-and-notarized build/Vox.app into a DMG with
+# Wraps the already-signed-and-notarized build/Znote.app into a DMG with
 # a classic "drag to Applications" layout, then signs + notarizes +
 # staples the DMG itself so Gatekeeper is happy on mount too.
 #
-# Prereq: run ./package.sh first so build/Vox.app is Developer-ID
+# Prereq: run ./package.sh first so build/Znote.app is Developer-ID
 # signed, notarized, and stapled.
 #
 # Usage:
-#   ./dmg.sh           Produce dist/Vox.dmg
+#   ./dmg.sh           Produce dist/Znote.dmg
 # ───────────────────────────────────────────────────────────
 
-APP="build/Vox.app"
+APP="build/Znote.app"
 IDENTITY="Developer ID Application: naisierding aihemaiti (ZVZ4AP4H2T)"
-NOTARY_PROFILE="Vox-notary"
+NOTARY_PROFILE="Znote-notary"
 DIST_DIR="dist"
-OUT_DMG="$DIST_DIR/Vox.dmg"
+OUT_DMG="$DIST_DIR/Znote.dmg"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 info() { echo -e "${CYAN}▸${NC} $*"; }
@@ -55,14 +55,14 @@ rm -f "$OUT_DMG"
 # ── 1. Build DMG with drag-to-Applications layout ─────────
 info "Building DMG with create-dmg..."
 create-dmg \
-    --volname "Vox" \
-    --volicon "$APP/Contents/Resources/Vox.icns" \
+    --volname "Znote" \
+    --volicon "$APP/Contents/Resources/Znote.icns" \
     --window-pos 200 120 \
     --window-size 540 380 \
     --icon-size 100 \
-    --icon "Vox.app" 140 190 \
+    --icon "Znote.app" 140 190 \
     --app-drop-link 400 190 \
-    --hide-extension "Vox.app" \
+    --hide-extension "Znote.app" \
     --no-internet-enable \
     "$OUT_DMG" \
     "$APP"
@@ -107,4 +107,4 @@ fi
 SIZE=$(du -h "$OUT_DMG" | awk '{print $1}')
 ok "Wrote: $OUT_DMG ($SIZE)"
 echo ""
-ok "Ready to distribute. Share $OUT_DMG — users double-click to mount, drag Vox to Applications."
+ok "Ready to distribute. Share $OUT_DMG — users double-click to mount, drag Znote to Applications."

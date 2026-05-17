@@ -4,7 +4,7 @@ import Foundation
 /// Records audio from the microphone using AVAudioEngine.
 /// Saves as WAV file suitable for Whisper.
 class AudioRecorder {
-    let outputPath = "/tmp/va_recording.wav"
+    let outputPath = "/tmp/znote_recording.wav"
 
     /// Callback reporting current audio level (0.0 - 1.0), called on audio thread
     var onAudioLevel: ((Float) -> Void)?

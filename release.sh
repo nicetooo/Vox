@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# ── Vox Release Script ──────────────────────────────────────
+# ── Znote Release Script ────────────────────────────────────
 # Usage:
 #   ./release.sh v0.1.0           Create tag and push to trigger GitHub Actions release
 #   ./release.sh v0.1.0 -m "msg"  With custom release message in tag
@@ -167,6 +167,6 @@ ok "Pushed tag to origin"
 echo ""
 ok "Release triggered! GitHub Actions will build and publish."
 echo ""
-echo "  📦 Monitor:  https://github.com/nicetooo/Vox/actions"
-echo "  🏷  Release:  https://github.com/nicetooo/Vox/releases/tag/$VERSION"
+echo "  📦 Monitor:  https://github.com/nicetooo/Znote/actions"
+echo "  🏷  Release:  https://github.com/nicetooo/Znote/releases/tag/$VERSION"
 echo ""

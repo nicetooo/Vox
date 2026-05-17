@@ -530,7 +530,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         container.addSubview(login)
         self.loginToggle = login
         y += 36
-        let loginHint = makeSubLabel("Start Vox automatically when you log in.")
+        let loginHint = makeSubLabel("Start Znote automatically when you log in.")
         loginHint.frame = NSRect(x: 0, y: y, width: width, height: 16)
         container.addSubview(loginHint)
         y += 26

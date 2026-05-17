@@ -1,14 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# ── Vox local distributable packaging ─────────────────────────
+# ── Znote local distributable packaging ───────────────────────
 #
-# Produces a signed + notarized + stapled Vox.zip that anyone can
+# Produces a signed + notarized + stapled Znote.zip that anyone can
 # download and double-click on macOS without Gatekeeper complaints.
 #
 # One-time setup (stores app-specific password in Keychain):
 #
-#   xcrun notarytool store-credentials "Vox-notary" \
+#   xcrun notarytool store-credentials "Znote-notary" \
 #       --apple-id "nicetooo.a@gmail.com" \
 #       --team-id "ZVZ4AP4H2T"
 #
@@ -16,13 +16,13 @@ set -euo pipefail
 #    generate one at https://appleid.apple.com → Sign-In and Security)
 #
 # Usage:
-#   ./package.sh           Build, sign, notarize, staple → dist/Vox.zip
+#   ./package.sh           Build, sign, notarize, staple → dist/Znote.zip
 # ──────────────────────────────────────────────────────────────
 
-APP="build/Vox.app"
-NOTARY_PROFILE="Vox-notary"
+APP="build/Znote.app"
+NOTARY_PROFILE="Znote-notary"
 DIST_DIR="dist"
-OUT_ZIP="$DIST_DIR/Vox.zip"
+OUT_ZIP="$DIST_DIR/Znote.zip"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 info() { echo -e "${CYAN}▸${NC} $*"; }
@@ -51,7 +51,7 @@ info "Building release and signing..."
 
 # ── 2. Zip for notarization submission ──────────────────────
 mkdir -p "$DIST_DIR"
-SUBMIT_ZIP="$DIST_DIR/Vox-submit.zip"
+SUBMIT_ZIP="$DIST_DIR/Znote-submit.zip"
 rm -f "$SUBMIT_ZIP"
 ditto -c -k --keepParent "$APP" "$SUBMIT_ZIP"
 

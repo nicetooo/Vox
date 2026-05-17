@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Vox",
+    name: "Znote",
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0"),
@@ -16,12 +16,12 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "Vox",
+            name: "Znote",
             dependencies: [
                 "CSQLite",
                 .product(name: "WhisperKit", package: "WhisperKit"),
             ],
-            path: "Sources/Vox",
+            path: "Sources/Znote",
             linkerSettings: [
                 .linkedFramework("Carbon"),
                 .linkedFramework("ApplicationServices"),

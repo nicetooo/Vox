@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# ── Vox build + sign helper ─────────────────────────────────
+# ── Znote build + sign helper ───────────────────────────────
 #
 # Rebuilds the debug binary, refreshes the .app bundle, and signs it with
 # the stable Developer ID Application certificate so macOS TCC (Accessibility
@@ -14,8 +14,8 @@ set -euo pipefail
 # ────────────────────────────────────────────────────────────
 
 IDENTITY="Developer ID Application: naisierding aihemaiti (ZVZ4AP4H2T)"
-ENTITLEMENTS="Sources/Vox/Resources/Vox.entitlements"
-APP="build/Vox.app"
+ENTITLEMENTS="Sources/Znote/Resources/Znote.entitlements"
+APP="build/Znote.app"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 info() { echo -e "${CYAN}▸${NC} $*"; }
@@ -33,10 +33,10 @@ fi
 CONFIG="${1:-debug}"
 if [[ "$CONFIG" == "release" ]]; then
     BUILD_FLAG="-c release"
-    BUILT_BINARY=".build/release/Vox"
+    BUILT_BINARY=".build/release/Znote"
 else
     BUILD_FLAG=""
-    BUILT_BINARY=".build/debug/Vox"
+    BUILT_BINARY=".build/debug/Znote"
 fi
 
 # 1. Build
@@ -46,9 +46,10 @@ swift build $BUILD_FLAG
 
 # 2. Refresh bundle
 info "Refreshing $APP"
-cp "$BUILT_BINARY" "$APP/Contents/MacOS/Vox"
-cp Sources/Vox/Resources/Info.plist "$APP/Contents/Info.plist"
-cp Sources/Vox/Resources/Vox.icns "$APP/Contents/Resources/Vox.icns"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp "$BUILT_BINARY" "$APP/Contents/MacOS/Znote"
+cp Sources/Znote/Resources/Info.plist "$APP/Contents/Info.plist"
+cp Sources/Znote/Resources/Znote.icns "$APP/Contents/Resources/Znote.icns"
 
 # 3. Sign with stable Developer ID + hardened runtime + entitlements
 info "Signing with: $IDENTITY"
