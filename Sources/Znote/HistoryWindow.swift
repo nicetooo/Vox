@@ -126,6 +126,9 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
     private var typeFilterIndex = 0
     private var typeButtons: [PillToggle] = []
     private var copyBtn: DarkActionButton?
+    private var folderBtn: DarkActionButton?
+    private var folderBtnWidth: NSLayoutConstraint?
+    private var folderBtnLeading: NSLayoutConstraint?
 
     private lazy var timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -330,6 +333,12 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         delBtn.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(delBtn)
 
+        let folderBtn = DarkActionButton(title: "Folder")
+        folderBtn.onClick = { [weak self] in self?.openScreenshotsFolder() }
+        folderBtn.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(folderBtn)
+        self.folderBtn = folderBtn
+
         let count = NSTextField(labelWithString: "")
         count.font = .systemFont(ofSize: 11)
         count.textColor = NSColor(white: 0.45, alpha: 1.0)
@@ -346,7 +355,16 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         root.addSubview(bar)
 
         // --- Constraints ---
+        // Folder button's leading + width are stored so updateFolderButtonVisibility()
+        // can collapse them to 0 when the type filter is not "Screenshot" — keeps the
+        // bar tight (no empty gap between Copy and the count label).
+        let folderLeading = folderBtn.leadingAnchor.constraint(equalTo: cBtn.trailingAnchor, constant: 8)
+        let folderWidth = folderBtn.widthAnchor.constraint(equalToConstant: 64)
+        self.folderBtnLeading = folderLeading
+        self.folderBtnWidth = folderWidth
+
         NSLayoutConstraint.activate([
+            folderLeading, folderWidth,
             title.topAnchor.constraint(equalTo: root.topAnchor, constant: pad),
             title.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: pad),
 
@@ -379,17 +397,22 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
             cBtn.widthAnchor.constraint(equalToConstant: 60),
             cBtn.heightAnchor.constraint(equalToConstant: 28),
 
-            delBtn.leadingAnchor.constraint(equalTo: cBtn.trailingAnchor, constant: 8),
-            delBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-            delBtn.widthAnchor.constraint(equalToConstant: 64),
-            delBtn.heightAnchor.constraint(equalToConstant: 28),
+            // Left cluster: non-destructive actions (Copy, Folder).
+            folderBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            folderBtn.heightAnchor.constraint(equalToConstant: 28),
 
+            // Right cluster: destructive actions (Delete, Clear All).
             clearBtn.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
             clearBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
             clearBtn.widthAnchor.constraint(equalToConstant: 72),
             clearBtn.heightAnchor.constraint(equalToConstant: 28),
 
-            count.trailingAnchor.constraint(equalTo: clearBtn.leadingAnchor, constant: -8),
+            delBtn.trailingAnchor.constraint(equalTo: clearBtn.leadingAnchor, constant: -8),
+            delBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            delBtn.widthAnchor.constraint(equalToConstant: 64),
+            delBtn.heightAnchor.constraint(equalToConstant: 28),
+
+            count.trailingAnchor.constraint(equalTo: delBtn.leadingAnchor, constant: -8),
             count.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
         ])
 
@@ -412,6 +435,16 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         tableView?.reloadData()
         countLabel?.stringValue = "\(records.count) items"
         emptyLabel?.isHidden = !records.isEmpty
+        updateFolderButtonVisibility()
+    }
+
+    /// Folder button only makes sense when browsing screenshots — hide it otherwise
+    /// and collapse its layout space so there's no awkward gap.
+    private func updateFolderButtonVisibility() {
+        let show = typeFilterIndex == HistoryTypeFilter.screenshot.rawValue
+        folderBtn?.isHidden = !show
+        folderBtnWidth?.constant = show ? 64 : 0
+        folderBtnLeading?.constant = show ? 8 : 0
     }
 
     // MARK: - NSSearchFieldDelegate
@@ -648,15 +681,56 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
     }
 
     private func clearAllClicked() {
+        // Count screenshots so we can mention disk cleanup in the confirmation.
+        let screenshotCount = records.filter { $0.type == .screenshot }.count
+
         let alert = NSAlert()
         alert.messageText = "Clear All History?"
-        alert.informativeText = "This will permanently delete all \(records.count) records."
+        if screenshotCount > 0 {
+            alert.informativeText = "This will permanently delete all \(records.count) records, including \(screenshotCount) screenshot file(s) on disk. This cannot be undone."
+        } else {
+            alert.informativeText = "This will permanently delete all \(records.count) records. This cannot be undone."
+        }
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Clear All")
         alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        HistoryStore.shared.deleteAll()
-        reloadData()
+
+        // Use a sheet attached to the panel rather than application-modal so the
+        // alert reliably appears above our borderless floating HistoryPanel
+        // (runModal() on a borderless panel can let the alert end up behind it).
+        if let panel = panel {
+            alert.beginSheetModal(for: panel) { [weak self] response in
+                guard response == .alertFirstButtonReturn else { return }
+                HistoryStore.shared.deleteAll()
+                self?.reloadData()
+            }
+        } else {
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            HistoryStore.shared.deleteAll()
+            reloadData()
+        }
+    }
+
+    /// Reveal the Screenshots folder in Finder. When a screenshot row is
+    /// selected (and its file still exists), reveal that file specifically;
+    /// otherwise just open the folder.
+    private func openScreenshotsFolder() {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("Znote").appendingPathComponent("Screenshots")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let selected = tableView?.selectedRowIndexes ?? IndexSet()
+        if let idx = selected.first, idx < records.count,
+           records[idx].type == .screenshot,
+           let path = records[idx].imagePath,
+           FileManager.default.fileExists(atPath: path) {
+            let url = URL(fileURLWithPath: path)
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            log("History: revealing screenshot \(path)")
+        } else {
+            NSWorkspace.shared.open(dir)
+            log("History: opened Screenshots folder \(dir.path)")
+        }
     }
 
     private func copySelectedToClipboard() {
