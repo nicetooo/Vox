@@ -85,22 +85,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         // Hotkey descriptions are populated dynamically in menuWillOpen.
-        menu.addItem(NSMenuItem(title: "History...", action: #selector(openHistory), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: L("menu.history"), action: #selector(openHistory), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: L("menu.settings"), action: #selector(openSettings), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit Znote", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: L("menu.quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
         statusItem.menu = menu
     }
 
     private func hotkeyMenuLabel(for action: HotkeyAction) -> String {
         let b = Settings.shared.hotkeyBinding(for: action)
-        let prefix: String
-        switch b.gesture {
-        case .tap: prefix = "Tap"
-        case .hold: prefix = "Hold"
-        case .doubleTap: prefix = "Double-tap"
-        }
-        return "\(prefix) \(b.side.displayName) \(b.modifier.symbol) — \(action.displayName)"
+        // gesture.displayName already localized via Settings.swift
+        return "\(b.gesture.displayName) \(b.side.displayName) \(b.modifier.symbol) — \(action.displayName)"
     }
 
     // MARK: - Dynamic Menu (permission status)
@@ -133,10 +128,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var issues: [(String, Selector)] = []
 
         if !accessibilityOK {
-            issues.append(("⚠ 需要辅助功能权限 — 点击打开设置", #selector(openAccessibilitySettings)))
+            issues.append((L("menu.permission.accessibility"), #selector(openAccessibilitySettings)))
         }
         if !inputMonitoringOK {
-            issues.append(("⚠ 需要输入监控权限 — 点击打开设置", #selector(openInputMonitoringSettings)))
+            issues.append((L("menu.permission.input_monitoring"), #selector(openInputMonitoringSettings)))
         }
 
         if !issues.isEmpty {
@@ -256,7 +251,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         whisperService.onModelReady = { [weak self] in
             guard let self = self, self.isRecording else { return }
             log("Model became ready during recording — switching overlay to waveform")
-            self.recordingOverlay.show(hint: self.recordingMode == .translate ? "→ English" : nil)
+            self.recordingOverlay.show(hint: self.recordingMode == .translate ? L("overlay.translate_hint") : nil)
         }
     }
 
@@ -298,7 +293,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 log("startRecording: model '\(model)' doesn't support translate — aborting")
                 DispatchQueue.main.async {
                     NSSound(named: "Frog")?.play()
-                    self.recordingOverlay.showMessage("Turbo can't translate.\nSwitch to Large V3 in Settings.")
+                    self.recordingOverlay.showMessage(L("overlay.no_translate"))
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
                         self?.recordingOverlay.hide()
                     }
@@ -315,9 +310,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // If model not ready, show loading message; otherwise show waveform
             if self.whisperService.isLoading || !self.whisperService.isModelReady {
                 log("Model not ready, showing loading message...")
-                self.recordingOverlay.showMessage("Loading model...")
+                self.recordingOverlay.showMessage(L("overlay.loading_model"))
             } else {
-                self.recordingOverlay.show(hint: mode == .translate ? "→ English" : nil)
+                self.recordingOverlay.show(hint: mode == .translate ? L("overlay.translate_hint") : nil)
             }
             self.audioRecorder.startRecording()
             log("Recording (mode: \(mode))...")
@@ -351,7 +346,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // If model still not ready by the time recording ends, keep showing loading message
             if whisper.isLoading || !whisper.isModelReady {
                 log("Model not ready yet, keeping loading message...")
-                self.recordingOverlay.showMessage("Loading model...")
+                self.recordingOverlay.showMessage(L("overlay.loading_model"))
             }
 
             Task.detached {
@@ -539,16 +534,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     log("startScreenRecording failed: \(error.localizedDescription)")
 
                     let alert = NSAlert()
-                    alert.messageText = "Couldn't start recording"
+                    alert.messageText = L("recording.error.title")
                     let msg = error.localizedDescription
                     if msg.lowercased().contains("permission") || msg.lowercased().contains("declined") {
-                        alert.informativeText = "Znote needs Screen Recording permission.\n\nSystem Settings → Privacy & Security → Screen Recording → enable Znote, then try again."
+                        alert.informativeText = L("recording.error.permission")
                     } else {
                         alert.informativeText = msg
                     }
                     alert.alertStyle = .warning
-                    alert.addButton(withTitle: "Open System Settings")
-                    alert.addButton(withTitle: "Cancel")
+                    alert.addButton(withTitle: L("button.open_system_settings"))
+                    alert.addButton(withTitle: L("button.cancel"))
                     if alert.runModal() == .alertFirstButtonReturn {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
                             NSWorkspace.shared.open(url)

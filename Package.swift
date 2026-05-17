@@ -22,6 +22,12 @@ let package = Package(
                 .product(name: "WhisperKit", package: "WhisperKit"),
             ],
             path: "Sources/Znote",
+            // sign.sh assembles the .app bundle manually (Info.plist, .icns,
+            // entitlements, and the en/zh-Hans .lproj folders), so SwiftPM
+            // doesn't need to know about them. Excluding keeps SwiftPM from
+            // complaining about "unhandled resources" or insisting on a
+            // defaultLocalization for resources we ship outside of SwiftPM.
+            exclude: ["Resources"],
             linkerSettings: [
                 .linkedFramework("Carbon"),
                 .linkedFramework("ApplicationServices"),

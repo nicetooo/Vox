@@ -24,5 +24,12 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Znote needs microphone access to record your voice for transcription.</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hans</string>
+	</array>
 </dict>
 </plist>

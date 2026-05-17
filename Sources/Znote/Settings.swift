@@ -22,26 +22,30 @@ class Settings {
     // base, tiny) have been removed because they're either superseded by Turbo or
     // too low-quality to be useful (especially for non-English).
 
-    static let popularModels: [WhisperModelInfo] = [
-        WhisperModelInfo(
-            name: "large-v3",
-            displayName: "Large V3",
-            size: "~3 GB",
-            note: "Best quality · multilingual · proper punctuation · ~1× realtime"
-        ),
-        WhisperModelInfo(
-            name: "large-v3-v20240930",
-            displayName: "Large V3 Turbo",
-            size: "~1.6 GB",
-            note: "~8× faster · multilingual · no translate · weaker punctuation"
-        ),
-        WhisperModelInfo(
-            name: "small",
-            displayName: "Small",
-            size: "~500 MB",
-            note: "Lightweight · English-mainly · Chinese accuracy ~25% WER"
-        ),
-    ]
+    /// Model display names stay English (technical identifiers users expect),
+    /// but the `note` field is localized.
+    static var popularModels: [WhisperModelInfo] {
+        [
+            WhisperModelInfo(
+                name: "large-v3",
+                displayName: "Large V3",
+                size: "~3 GB",
+                note: L("model.large_v3.note")
+            ),
+            WhisperModelInfo(
+                name: "large-v3-v20240930",
+                displayName: "Large V3 Turbo",
+                size: "~1.6 GB",
+                note: L("model.large_v3_turbo.note")
+            ),
+            WhisperModelInfo(
+                name: "small",
+                displayName: "Small",
+                size: "~500 MB",
+                note: L("model.small.note")
+            ),
+        ]
+    }
 
     // MARK: - Available Languages
 
@@ -204,7 +208,7 @@ class Settings {
             do {
                 log("Downloading model '\(variant)' to \(modelStorageDir.path)")
                 DispatchQueue.main.async {
-                    onProgress(DownloadProgress(percent: 0.0, fileName: variant, message: "Downloading \(variant)..."))
+                    onProgress(DownloadProgress(percent: 0.0, fileName: variant, message: L("download.starting", variant)))
                 }
 
                 let modelURL = try await WhisperKit.download(
@@ -212,7 +216,7 @@ class Settings {
                     downloadBase: modelStorageDir,
                     progressCallback: { progress in
                         let pct = progress.fractionCompleted
-                        let msg = String(format: "Downloading... %.0f%%", pct * 100)
+                        let msg = L("download.progress", pct * 100)
                         DispatchQueue.main.async {
                             onProgress(DownloadProgress(percent: pct, fileName: variant, message: msg))
                         }
@@ -221,13 +225,13 @@ class Settings {
 
                 log("Model download success: \(variant) → \(modelURL.path)")
                 DispatchQueue.main.async {
-                    onProgress(DownloadProgress(percent: 1.0, fileName: variant, message: "Download complete"))
+                    onProgress(DownloadProgress(percent: 1.0, fileName: variant, message: L("download.complete")))
                     onComplete(true)
                 }
             } catch {
                 log("Model download failed: \(variant) — \(error)")
                 DispatchQueue.main.async {
-                    onProgress(DownloadProgress(percent: 0, fileName: variant, message: "Error: \(error.localizedDescription)"))
+                    onProgress(DownloadProgress(percent: 0, fileName: variant, message: L("download.error", error.localizedDescription)))
                     onComplete(false)
                 }
             }
@@ -304,7 +308,7 @@ struct LanguageOption {
 
 enum HotkeySide: String, CaseIterable {
     case left, right
-    var displayName: String { self == .left ? "Left" : "Right" }
+    var displayName: String { self == .left ? L("hotkey.side.left") : L("hotkey.side.right") }
 }
 
 enum HotkeyModifier: String, CaseIterable {
@@ -322,9 +326,9 @@ enum HotkeyGesture: String, CaseIterable {
     case tap, hold, doubleTap
     var displayName: String {
         switch self {
-        case .tap: return "Tap"
-        case .hold: return "Hold"
-        case .doubleTap: return "Double-tap"
+        case .tap: return L("hotkey.gesture.tap")
+        case .hold: return L("hotkey.gesture.hold")
+        case .doubleTap: return L("hotkey.gesture.double_tap")
         }
     }
 }
@@ -334,11 +338,11 @@ enum HotkeyAction: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .voiceInput: return "Voice Input"
-        case .voiceTranslate: return "Voice → English"
-        case .toggleHistory: return "Toggle History"
-        case .translate: return "Translate Selection"
-        case .screenshot: return "Screenshot"
+        case .voiceInput: return L("hotkey.action.voice_input")
+        case .voiceTranslate: return L("hotkey.action.voice_translate")
+        case .toggleHistory: return L("hotkey.action.toggle_history")
+        case .translate: return L("hotkey.action.translate")
+        case .screenshot: return L("hotkey.action.screenshot")
         }
     }
 

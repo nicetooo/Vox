@@ -236,14 +236,14 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         root.appearance = NSAppearance(named: .darkAqua)
 
         // --- Title ---
-        let title = NSTextField(labelWithString: "History")
+        let title = NSTextField(labelWithString: L("history.title"))
         title.font = .systemFont(ofSize: 16, weight: .semibold)
         title.textColor = .white
         title.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(title)
 
         // --- Hint ---
-        let hint = NSTextField(labelWithString: "ESC to close")
+        let hint = NSTextField(labelWithString: L("history.esc_hint"))
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = NSColor(white: 0.35, alpha: 1.0)
         hint.translatesAutoresizingMaskIntoConstraints = false
@@ -251,7 +251,7 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
 
         // --- Search ---
         let search = NSSearchField()
-        search.placeholderString = "Search..."
+        search.placeholderString = L("history.search.placeholder")
         search.delegate = self
         search.font = .systemFont(ofSize: 13)
         search.focusRingType = .none
@@ -266,7 +266,14 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         pillStack.translatesAutoresizingMaskIntoConstraints = false
         typeButtons = []
 
-        for (i, label) in ["All", "Voice", "Translation", "Screenshot", "Recording"].enumerated() {
+        let pillLabels = [
+            L("history.filter.all"),
+            L("history.filter.voice"),
+            L("history.filter.translation"),
+            L("history.filter.screenshot"),
+            L("history.filter.recording"),
+        ]
+        for (i, label) in pillLabels.enumerated() {
             let pill = PillToggle(title: label, selected: i == 0)
             pill.index = i
             pill.onClick = { [weak self] tag in self?.typeFilterTapped(tag) }
@@ -318,7 +325,7 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         root.addSubview(scroll)
 
         // --- Empty state ---
-        let empty = NSTextField(labelWithString: "No history yet")
+        let empty = NSTextField(labelWithString: L("history.empty"))
         empty.font = .systemFont(ofSize: 14)
         empty.textColor = NSColor(white: 0.4, alpha: 1.0)
         empty.alignment = .center
@@ -331,18 +338,18 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         let bar = NSView()
         bar.translatesAutoresizingMaskIntoConstraints = false
 
-        let cBtn = DarkActionButton(title: "Copy")
+        let cBtn = DarkActionButton(title: L("button.copy"))
         cBtn.onClick = { [weak self] in self?.copySelectedToClipboard() }
         cBtn.translatesAutoresizingMaskIntoConstraints = false
         self.copyBtn = cBtn
         bar.addSubview(cBtn)
 
-        let delBtn = DarkActionButton(title: "Delete", destructive: true)
+        let delBtn = DarkActionButton(title: L("button.delete"), destructive: true)
         delBtn.onClick = { [weak self] in self?.deleteClicked() }
         delBtn.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(delBtn)
 
-        let folderBtn = DarkActionButton(title: "Folder")
+        let folderBtn = DarkActionButton(title: L("button.folder"))
         folderBtn.onClick = { [weak self] in self?.openScreenshotsFolder() }
         folderBtn.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(folderBtn)
@@ -356,7 +363,7 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         self.countLabel = count
         bar.addSubview(count)
 
-        let clearBtn = DarkActionButton(title: "Clear All", destructive: true)
+        let clearBtn = DarkActionButton(title: L("button.clear_all"), destructive: true)
         clearBtn.onClick = { [weak self] in self?.clearAllClicked() }
         clearBtn.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(clearBtn)
@@ -442,7 +449,7 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         records = HistoryStore.shared.fetch(query: query, typeFilter: filter)
         expandedRow = nil
         tableView?.reloadData()
-        countLabel?.stringValue = "\(records.count) items"
+        countLabel?.stringValue = L("history.count", records.count)
         emptyLabel?.isHidden = !records.isEmpty
         updateFolderButtonVisibility()
     }
@@ -649,7 +656,7 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
             ])
 
             if !hasContent {
-                let missing = NSTextField(labelWithString: "File missing on disk")
+                let missing = NSTextField(labelWithString: L("history.file_missing_on_disk"))
                 missing.font = .systemFont(ofSize: 12)
                 missing.textColor = NSColor(white: 0.55, alpha: 1.0)
                 missing.translatesAutoresizingMaskIntoConstraints = false
@@ -739,15 +746,15 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         let screenshotCount = records.filter { $0.type == .screenshot }.count
 
         let alert = NSAlert()
-        alert.messageText = "Clear All History?"
+        alert.messageText = L("history.clear_all.title")
         if screenshotCount > 0 {
-            alert.informativeText = "This will permanently delete all \(records.count) records, including \(screenshotCount) screenshot file(s) on disk. This cannot be undone."
+            alert.informativeText = L("history.clear_all.body_with_files", records.count, screenshotCount)
         } else {
-            alert.informativeText = "This will permanently delete all \(records.count) records. This cannot be undone."
+            alert.informativeText = L("history.clear_all.body_text_only", records.count)
         }
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Clear All")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("button.clear_all"))
+        alert.addButton(withTitle: L("button.cancel"))
 
         // Use a sheet attached to the panel rather than application-modal so the
         // alert reliably appears above our borderless floating HistoryPanel
@@ -840,7 +847,7 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
 
         let pb = NSPasteboard.general
         pb.clearContents()
-        var copiedLabel = "Copied!"
+        var copiedLabel = L("history.copied")
 
         // Single media selection: put the actual media on the clipboard.
         // Screenshot → NSImage (paste anywhere as image).
@@ -854,7 +861,7 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
                     pb.writeObjects([img])
                     log("History: copied screenshot \(path)")
                 } else {
-                    copiedLabel = "File missing"
+                    copiedLabel = L("history.file_missing_short")
                     log("History: screenshot file missing — \(path)")
                 }
             } else if r.type == .recording, let path = r.imagePath {
@@ -863,7 +870,7 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
                     pb.writeObjects([url as NSURL])
                     log("History: copied recording file URL \(path)")
                 } else {
-                    copiedLabel = "File missing"
+                    copiedLabel = L("history.file_missing_short")
                     log("History: recording file missing — \(path)")
                 }
             } else {

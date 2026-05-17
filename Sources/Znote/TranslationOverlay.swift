@@ -89,7 +89,7 @@ class TranslationOverlay: NSObject {
         let textSize = textField.fittingSize
 
         // --- Copy button ---
-        let copyBtn = PillButton(title: "复制")
+        let copyBtn = PillButton(title: L("translation.copy"))
         copyBtn.onClick = { [weak self] in self?.doCopy(button: copyBtn) }
 
         // --- Calculate panel size ---

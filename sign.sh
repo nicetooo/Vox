@@ -69,6 +69,15 @@ cp "$BUILT_BINARY" "$APP/Contents/MacOS/Znote"
 cp Sources/Znote/Resources/Info.plist "$APP/Contents/Info.plist"
 cp Sources/Znote/Resources/Znote.icns "$APP/Contents/Resources/Znote.icns"
 
+# 2b. Localization — copy each .lproj into Contents/Resources/ so
+# NSBundle.localizedString picks up the right Localizable.strings at runtime.
+# Wipe stale lprojs first in case a language was removed.
+find "$APP/Contents/Resources" -maxdepth 1 -name "*.lproj" -type d -exec rm -rf {} +
+for lproj in Sources/Znote/Resources/*.lproj; do
+    [[ -d "$lproj" ]] || continue
+    cp -R "$lproj" "$APP/Contents/Resources/"
+done
+
 # 3. Sign with stable Developer ID + hardened runtime + entitlements
 info "Signing with: $IDENTITY"
 codesign --force --deep \

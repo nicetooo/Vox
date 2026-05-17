@@ -1,0 +1,121 @@
+/* Znote — English (source language)
+ * Keys are <scope>.<name>. Format-string positions use %1$@ / %2$d for stability
+ * across translations where Chinese sentence order may differ from English.
+ */
+
+/* ── Menu Bar ────────────────────────────────────────────── */
+"menu.history" = "History...";
+"menu.settings" = "Settings...";
+"menu.quit" = "Quit Znote";
+"menu.permission.accessibility" = "⚠ Need Accessibility — click to open Settings";
+"menu.permission.input_monitoring" = "⚠ Need Input Monitoring — click to open Settings";
+
+/* ── Hotkeys — sides, gestures, action names ────────────── */
+"hotkey.side.left" = "Left";
+"hotkey.side.right" = "Right";
+"hotkey.gesture.tap" = "Tap";
+"hotkey.gesture.hold" = "Hold";
+"hotkey.gesture.double_tap" = "Double-tap";
+"hotkey.gesture.double_short" = "Double";
+"hotkey.action.voice_input" = "Voice Input";
+"hotkey.action.voice_translate" = "Voice → English";
+"hotkey.action.toggle_history" = "Toggle History";
+"hotkey.action.translate" = "Translate Selection";
+"hotkey.action.screenshot" = "Screenshot";
+
+/* ── Recording / overlay messages ───────────────────────── */
+"overlay.loading_model" = "Loading model...";
+"overlay.no_translate" = "Turbo can't translate.\nSwitch to Large V3 in Settings.";
+"overlay.translate_hint" = "→ English";
+
+/* ── Screen recording errors ────────────────────────────── */
+"recording.error.title" = "Couldn't start recording";
+"recording.error.permission" = "Znote needs Screen Recording permission.\n\nSystem Settings → Privacy & Security → Screen Recording → enable Znote, then try again.";
+
+/* ── Common buttons ─────────────────────────────────────── */
+"button.cancel" = "Cancel";
+"button.delete" = "Delete";
+"button.copy" = "Copy";
+"button.folder" = "Folder";
+"button.clear_all" = "Clear All";
+"button.open_system_settings" = "Open System Settings";
+"button.capture" = "Capture";
+"button.record" = "Record";
+"button.reset_defaults" = "Reset to defaults";
+
+"button.activate" = "Activate";
+"button.activate_active" = "Active ✓";
+"button.download" = "Download";
+"button.downloading" = "Downloading...";
+"button.downloaded" = "Downloaded";
+
+/* ── History panel ──────────────────────────────────────── */
+"history.title" = "History";
+"history.esc_hint" = "ESC to close";
+"history.search.placeholder" = "Search...";
+"history.empty" = "No history yet";
+"history.filter.all" = "All";
+"history.filter.voice" = "Voice";
+"history.filter.translation" = "Translation";
+"history.filter.screenshot" = "Screenshot";
+"history.filter.recording" = "Recording";
+"history.count" = "%d items";
+"history.copied" = "Copied!";
+"history.file_missing_short" = "File missing";
+"history.file_missing_on_disk" = "File missing on disk";
+"history.row.screenshot_prefix" = "Screenshot — %@";
+"history.row.recording_prefix" = "Recording — %@";
+"history.clear_all.title" = "Clear All History?";
+"history.clear_all.body_with_files" = "This will permanently delete all %1$d records, including %2$d screenshot file(s) on disk. This cannot be undone.";
+"history.clear_all.body_text_only" = "This will permanently delete all %d records. This cannot be undone.";
+
+/* ── Settings panel ─────────────────────────────────────── */
+"settings.title" = "Settings";
+"settings.esc_hint" = "ESC to close";
+
+"settings.section.languages" = "Recognition Languages";
+"settings.section.model" = "Whisper Model";
+"settings.section.silence" = "Silence Filter";
+"settings.section.silence.hint" = "Skip recordings that are too quiet or too short.";
+"settings.section.hotkeys" = "Hotkeys";
+"settings.section.hotkeys.hint" = "Gesture is fixed per action — change Side/Modifier below.";
+"settings.section.general" = "General";
+
+"settings.silence.label.threshold" = "Mic sensitivity";
+"settings.silence.label.duration" = "Min duration";
+"settings.silence.hint.sensitive" = "Sensitive";
+"settings.silence.hint.strict" = "Strict";
+
+"settings.general.launch_at_login" = "Launch at Login";
+"settings.general.launch_at_login.hint" = "Start Znote automatically when you log in.";
+
+"settings.language.hint.none" = "No language selected — Whisper will auto-detect";
+"settings.language.hint.single" = "→ %@ — best accuracy";
+"settings.language.hint.multiple" = "Multiple languages — Whisper will auto-detect";
+
+"settings.model.status.not_downloaded" = "Not downloaded";
+"settings.model.status.active" = "▶ Active model (%@)";
+"settings.model.status.downloaded" = "Downloaded (%@)";
+"settings.model.status.switched" = "▶ Switched to %@";
+"settings.model.status.download_done" = "✓ Downloaded";
+"settings.model.status.download_failed" = "✗ Download failed";
+"settings.model.status.deleted" = "✓ Deleted (%@ freed)";
+"settings.model.status.delete_failed" = "✗ Failed to delete";
+"settings.model.delete.title" = "Delete Model?";
+"settings.model.delete.body" = "Delete %1$@ (%2$@)? You can re-download it later.";
+
+"settings.hotkey.conflict" = "⚠ Conflict: %@";
+
+/* ── Whisper model notes ────────────────────────────────── */
+"model.large_v3.note" = "Best quality · multilingual · proper punctuation · ~1× realtime";
+"model.large_v3_turbo.note" = "~8× faster · multilingual · no translate · weaker punctuation";
+"model.small.note" = "Lightweight · English-mainly · Chinese accuracy ~25% WER";
+
+/* ── Download progress ──────────────────────────────────── */
+"download.starting" = "Downloading %@...";
+"download.progress" = "Downloading... %.0f%%";
+"download.complete" = "Download complete";
+"download.error" = "Error: %@";
+
+/* ── Translation overlay ────────────────────────────────── */
+"translation.copy" = "Copy";

@@ -115,12 +115,12 @@ final class CaptureActionPicker {
         let btnY: CGFloat = 22
         let hintY: CGFloat = 4
 
-        let captureBtn = PickerButton(symbol: "camera.fill", title: "Capture", accent: true)
+        let captureBtn = PickerButton(symbol: "camera.fill", title: L("button.capture"), accent: true)
         captureBtn.frame = NSRect(x: 8, y: btnY, width: 92, height: 36)
         captureBtn.onClick = { [weak self] in self?.handleCapture() }
         root.addSubview(captureBtn)
 
-        let recordBtn = PickerButton(symbol: "video.fill", title: "Record", accent: false)
+        let recordBtn = PickerButton(symbol: "video.fill", title: L("button.record"), accent: false)
         recordBtn.frame = NSRect(x: 104, y: btnY, width: 78, height: 36)
         recordBtn.onClick = { [weak self] in self?.handleRecord() }
         root.addSubview(recordBtn)

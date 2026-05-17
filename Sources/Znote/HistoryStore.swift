@@ -22,9 +22,9 @@ struct HistoryRecord {
             if let input = inputText { return "\(input)\n→ \(outputText)" }
             return outputText
         case .screenshot:
-            return "Screenshot — \(outputText)"  // outputText holds filename
+            return L("history.row.screenshot_prefix", outputText)  // outputText holds filename
         case .recording:
-            return "Recording — \(outputText)"   // outputText holds filename
+            return L("history.row.recording_prefix", outputText)   // outputText holds filename
         }
     }
 

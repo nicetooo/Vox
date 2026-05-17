@@ -400,13 +400,13 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         root.layer?.masksToBounds = true
 
         // --- Title bar ---
-        let title = NSTextField(labelWithString: "Settings")
+        let title = NSTextField(labelWithString: L("settings.title"))
         title.font = .systemFont(ofSize: 16, weight: .semibold)
         title.textColor = .white
         title.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(title)
 
-        let hint = NSTextField(labelWithString: "ESC to close")
+        let hint = NSTextField(labelWithString: L("settings.esc_hint"))
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = NSColor(white: 0.35, alpha: 1.0)
         hint.translatesAutoresizingMaskIntoConstraints = false
@@ -455,7 +455,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         let container = FlippedView()
 
         // === Languages ===
-        y += addSectionHeader("Recognition Languages", at: y, in: container, width: width)
+        y += addSectionHeader(L("settings.section.languages"), at: y, in: container, width: width)
         y += 6
         y += addLanguageGrid(at: y, in: container, width: width)
         y += 4
@@ -469,7 +469,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         y += addSeparator(at: y, in: container, width: width)
 
         // === Whisper Model ===
-        y += addSectionHeader("Whisper Model", at: y, in: container, width: width)
+        y += addSectionHeader(L("settings.section.model"), at: y, in: container, width: width)
         y += 6
         y += addModelList(at: y, in: container, width: width)
         y += 8
@@ -496,20 +496,20 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         y += addSeparator(at: y, in: container, width: width)
 
         // === Silence Filter ===
-        y += addSectionHeader("Silence Filter", at: y, in: container, width: width)
-        let filterHint = makeSubLabel("Skip recordings that are too quiet or too short.")
+        y += addSectionHeader(L("settings.section.silence"), at: y, in: container, width: width)
+        let filterHint = makeSubLabel(L("settings.section.silence.hint"))
         filterHint.frame = NSRect(x: 0, y: y, width: width, height: 16)
         container.addSubview(filterHint)
         y += 22
 
         y += addSlider(
-            label: "Mic sensitivity", value: Double(Settings.shared.silenceThreshold),
-            min: 0.01, max: 0.30, leftHint: "Sensitive", rightHint: "Strict",
+            label: L("settings.silence.label.threshold"), value: Double(Settings.shared.silenceThreshold),
+            min: 0.01, max: 0.30, leftHint: L("settings.silence.hint.sensitive"), rightHint: L("settings.silence.hint.strict"),
             at: y, in: container, width: width, isSilence: true
         )
         y += 6
         y += addSlider(
-            label: "Min duration", value: Settings.shared.minRecordingDuration,
+            label: L("settings.silence.label.duration"), value: Settings.shared.minRecordingDuration,
             min: 0.2, max: 2.0, leftHint: "0.2s", rightHint: "2.0s",
             at: y, in: container, width: width, isSilence: false
         )
@@ -517,15 +517,15 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         y += addSeparator(at: y, in: container, width: width)
 
         // === Hotkeys ===
-        y += addSectionHeader("Hotkeys", at: y, in: container, width: width)
-        let hkHint = makeSubLabel("Gesture is fixed per action — change Side/Modifier below.")
+        y += addSectionHeader(L("settings.section.hotkeys"), at: y, in: container, width: width)
+        let hkHint = makeSubLabel(L("settings.section.hotkeys.hint"))
         hkHint.frame = NSRect(x: 0, y: y, width: width, height: 16)
         container.addSubview(hkHint)
         y += 22
         y += addHotkeyRows(at: y, in: container, width: width)
         y += 8
 
-        let resetBtn = SettingsActionButton(title: "Reset to defaults", style: .normal)
+        let resetBtn = SettingsActionButton(title: L("button.reset_defaults"), style: .normal)
         resetBtn.frame = NSRect(x: 0, y: y, width: 140, height: 28)
         resetBtn.onClick = { [weak self] in self?.resetHotkeysClicked() }
         container.addSubview(resetBtn)
@@ -543,15 +543,15 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         y += addSeparator(at: y, in: container, width: width)
 
         // === General ===
-        y += addSectionHeader("General", at: y, in: container, width: width)
+        y += addSectionHeader(L("settings.section.general"), at: y, in: container, width: width)
         y += 6
-        let login = DarkToggle(title: "Launch at Login", isOn: SMAppService.mainApp.status == .enabled)
+        let login = DarkToggle(title: L("settings.general.launch_at_login"), isOn: SMAppService.mainApp.status == .enabled)
         login.frame = NSRect(x: 0, y: y, width: width, height: 32)
         login.onToggle = { [weak self] toggle in self?.loginToggled(toggle) }
         container.addSubview(login)
         self.loginToggle = login
         y += 36
-        let loginHint = makeSubLabel("Start Znote automatically when you log in.")
+        let loginHint = makeSubLabel(L("settings.general.launch_at_login.hint"))
         loginHint.frame = NSRect(x: 0, y: y, width: width, height: 16)
         container.addSubview(loginHint)
         y += 26
@@ -636,21 +636,21 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         let btnSpacing: CGFloat = 8
         var x: CGFloat = 0
 
-        let actBtn = SettingsActionButton(title: "Activate", style: .accent)
+        let actBtn = SettingsActionButton(title: L("button.activate"), style: .accent)
         actBtn.frame = NSRect(x: x, y: y, width: 80, height: btnHeight)
         actBtn.onClick = { [weak self] in self?.activateClicked() }
         container.addSubview(actBtn)
         self.activateButton = actBtn
         x += 80 + btnSpacing
 
-        let dlBtn = SettingsActionButton(title: "Download", style: .normal)
+        let dlBtn = SettingsActionButton(title: L("button.download"), style: .normal)
         dlBtn.frame = NSRect(x: x, y: y, width: 90, height: btnHeight)
         dlBtn.onClick = { [weak self] in self?.downloadClicked() }
         container.addSubview(dlBtn)
         self.downloadButton = dlBtn
         x += 90 + btnSpacing
 
-        let delBtn = SettingsActionButton(title: "Delete", style: .destructive)
+        let delBtn = SettingsActionButton(title: L("button.delete"), style: .destructive)
         delBtn.frame = NSRect(x: x, y: y, width: 70, height: btnHeight)
         delBtn.onClick = { [weak self] in self?.deleteClicked() }
         container.addSubview(delBtn)
@@ -749,9 +749,9 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
                 // Use shortened labels so they fit narrow pills.
                 let gOpts = action.allowedGestures.map { g -> String in
                     switch g {
-                    case .tap: return "Tap"
-                    case .hold: return "Hold"
-                    case .doubleTap: return "Double"
+                    case .tap: return L("hotkey.gesture.tap")
+                    case .hold: return L("hotkey.gesture.hold")
+                    case .doubleTap: return L("hotkey.gesture.double_short")
                     }
                 }
                 let gIdx = action.allowedGestures.firstIndex(of: binding.gesture) ?? 0
@@ -791,7 +791,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
             hotkeyConflictLabel?.stringValue = ""
         } else {
             let parts = conflicts.map { "\($0.0.displayName) ↔ \($0.1.displayName)" }
-            hotkeyConflictLabel?.stringValue = "⚠ Conflict: \(parts.joined(separator: ", "))"
+            hotkeyConflictLabel?.stringValue = L("settings.hotkey.conflict", parts.joined(separator: ", "))
         }
     }
 
@@ -844,22 +844,22 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
 
         // Activate
         if isActive {
-            activateButton?.updateTitle("Active ✓")
+            activateButton?.updateTitle(L("button.activate_active"))
             activateButton?.isEnabled = false
         } else if isDownloaded {
-            activateButton?.updateTitle("Activate")
+            activateButton?.updateTitle(L("button.activate"))
             activateButton?.isEnabled = !isDownloading
         } else {
-            activateButton?.updateTitle("Activate")
+            activateButton?.updateTitle(L("button.activate"))
             activateButton?.isEnabled = false
         }
 
         // Download
         if isDownloaded {
-            downloadButton?.updateTitle("Downloaded")
+            downloadButton?.updateTitle(L("button.downloaded"))
             downloadButton?.isEnabled = false
         } else {
-            downloadButton?.updateTitle(isDownloading ? "Downloading..." : "Download")
+            downloadButton?.updateTitle(isDownloading ? L("button.downloading") : L("button.download"))
             downloadButton?.isEnabled = !isDownloading
         }
 
@@ -869,13 +869,13 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         // Status
         if !isDownloading {
             if !isDownloaded {
-                downloadStatus?.stringValue = "Not downloaded"
+                downloadStatus?.stringValue = L("settings.model.status.not_downloaded")
             } else if isActive {
                 let size = Settings.cachedModelSize(selected)
-                downloadStatus?.stringValue = "▶ Active model (\(size))"
+                downloadStatus?.stringValue = L("settings.model.status.active", size)
             } else {
                 let size = Settings.cachedModelSize(selected)
-                downloadStatus?.stringValue = "Downloaded (\(size))"
+                downloadStatus?.stringValue = L("settings.model.status.downloaded", size)
             }
         }
     }
@@ -901,7 +901,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
 
         Settings.shared.whisperModel = name
         log("Settings: activated model = \(name)")
-        downloadStatus?.stringValue = "▶ Switched to \(name)"
+        downloadStatus?.stringValue = L("settings.model.status.switched", name)
         refreshModelList()
         updateModelButtons()
     }
@@ -911,7 +911,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         guard !isDownloading else { return }
 
         isDownloading = true
-        downloadButton?.updateTitle("Downloading...")
+        downloadButton?.updateTitle(L("button.downloading"))
         downloadButton?.isEnabled = false
         progressBar?.isHidden = false
         progressBar?.doubleValue = 0
@@ -923,10 +923,10 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
             self?.isDownloading = false
             self?.progressBar?.isHidden = true
             if success {
-                self?.downloadStatus?.stringValue = "✓ Downloaded"
+                self?.downloadStatus?.stringValue = L("settings.model.status.download_done")
                 log("Settings: model downloaded: \(name)")
             } else {
-                self?.downloadStatus?.stringValue = "✗ Download failed"
+                self?.downloadStatus?.stringValue = L("settings.model.status.download_failed")
             }
             self?.refreshModelList()
             self?.updateModelButtons()
@@ -938,11 +938,11 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         let size = Settings.cachedModelSize(name)
 
         let alert = NSAlert()
-        alert.messageText = "Delete Model?"
-        alert.informativeText = "Delete \(name) (\(size))? You can re-download it later."
+        alert.messageText = L("settings.model.delete.title")
+        alert.informativeText = L("settings.model.delete.body", name, size)
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Delete")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("button.delete"))
+        alert.addButton(withTitle: L("button.cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         if name == Settings.shared.whisperModel {
@@ -952,9 +952,9 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         }
 
         if Settings.deleteModel(name) {
-            downloadStatus?.stringValue = "✓ Deleted (\(size) freed)"
+            downloadStatus?.stringValue = L("settings.model.status.deleted", size)
         } else {
-            downloadStatus?.stringValue = "✗ Failed to delete"
+            downloadStatus?.stringValue = L("settings.model.status.delete_failed")
         }
         refreshModelList()
         updateModelButtons()
@@ -993,12 +993,12 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         let langs = Settings.shared.selectedLanguages
         switch langs.count {
         case 0:
-            hintLabel?.stringValue = "No language selected — Whisper will auto-detect"
+            hintLabel?.stringValue = L("settings.language.hint.none")
         case 1:
             let name = Settings.availableLanguages.first(where: { $0.code == langs[0] })?.name ?? langs[0]
-            hintLabel?.stringValue = "→ \(name) — best accuracy"
+            hintLabel?.stringValue = L("settings.language.hint.single", name)
         default:
-            hintLabel?.stringValue = "Multiple languages — Whisper will auto-detect"
+            hintLabel?.stringValue = L("settings.language.hint.multiple")
         }
     }
 

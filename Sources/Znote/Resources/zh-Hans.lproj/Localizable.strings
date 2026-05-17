@@ -1,0 +1,118 @@
+/* Znote — 简体中文 */
+
+/* ── 菜单栏 ─────────────────────────────────────────────── */
+"menu.history" = "历史...";
+"menu.settings" = "设置...";
+"menu.quit" = "退出 Znote";
+"menu.permission.accessibility" = "⚠ 缺少辅助功能权限 — 点击打开设置";
+"menu.permission.input_monitoring" = "⚠ 缺少输入监控权限 — 点击打开设置";
+
+/* ── 快捷键 ─────────────────────────────────────────────── */
+"hotkey.side.left" = "左";
+"hotkey.side.right" = "右";
+"hotkey.gesture.tap" = "单击";
+"hotkey.gesture.hold" = "长按";
+"hotkey.gesture.double_tap" = "双击";
+"hotkey.gesture.double_short" = "双击";
+"hotkey.action.voice_input" = "语音输入";
+"hotkey.action.voice_translate" = "语音 → 英文";
+"hotkey.action.toggle_history" = "切换历史";
+"hotkey.action.translate" = "翻译选区";
+"hotkey.action.screenshot" = "截图";
+
+/* ── 录音 / 浮层 ────────────────────────────────────────── */
+"overlay.loading_model" = "加载模型中...";
+"overlay.no_translate" = "Turbo 不支持翻译。\n请在设置中切换到 Large V3。";
+"overlay.translate_hint" = "→ English";
+
+/* ── 录屏错误 ───────────────────────────────────────────── */
+"recording.error.title" = "无法开始录屏";
+"recording.error.permission" = "Znote 需要屏幕录制权限。\n\n系统设置 → 隐私与安全 → 屏幕录制 → 启用 Znote,然后重试。";
+
+/* ── 通用按钮 ───────────────────────────────────────────── */
+"button.cancel" = "取消";
+"button.delete" = "删除";
+"button.copy" = "复制";
+"button.folder" = "文件夹";
+"button.clear_all" = "全部清除";
+"button.open_system_settings" = "打开系统设置";
+"button.capture" = "截图";
+"button.record" = "录屏";
+"button.reset_defaults" = "重置为默认";
+
+"button.activate" = "启用";
+"button.activate_active" = "已启用 ✓";
+"button.download" = "下载";
+"button.downloading" = "下载中...";
+"button.downloaded" = "已下载";
+
+/* ── 历史面板 ───────────────────────────────────────────── */
+"history.title" = "历史";
+"history.esc_hint" = "ESC 关闭";
+"history.search.placeholder" = "搜索...";
+"history.empty" = "暂无历史";
+"history.filter.all" = "全部";
+"history.filter.voice" = "语音";
+"history.filter.translation" = "翻译";
+"history.filter.screenshot" = "截图";
+"history.filter.recording" = "录屏";
+"history.count" = "%d 条";
+"history.copied" = "已复制!";
+"history.file_missing_short" = "文件缺失";
+"history.file_missing_on_disk" = "磁盘上文件不存在";
+"history.row.screenshot_prefix" = "截图 — %@";
+"history.row.recording_prefix" = "录屏 — %@";
+"history.clear_all.title" = "清除全部历史?";
+"history.clear_all.body_with_files" = "这将永久删除全部 %1$d 条记录,以及磁盘上的 %2$d 个截图文件。无法撤销。";
+"history.clear_all.body_text_only" = "这将永久删除全部 %d 条记录。无法撤销。";
+
+/* ── 设置面板 ───────────────────────────────────────────── */
+"settings.title" = "设置";
+"settings.esc_hint" = "ESC 关闭";
+
+"settings.section.languages" = "识别语言";
+"settings.section.model" = "Whisper 模型";
+"settings.section.silence" = "静音过滤";
+"settings.section.silence.hint" = "过滤过于安静或过短的录音。";
+"settings.section.hotkeys" = "快捷键";
+"settings.section.hotkeys.hint" = "每个操作的手势已固定 —— 在下方调整位置和修饰键。";
+"settings.section.general" = "通用";
+
+"settings.silence.label.threshold" = "麦克风灵敏度";
+"settings.silence.label.duration" = "最短时长";
+"settings.silence.hint.sensitive" = "灵敏";
+"settings.silence.hint.strict" = "严格";
+
+"settings.general.launch_at_login" = "开机启动";
+"settings.general.launch_at_login.hint" = "登录系统时自动启动 Znote。";
+
+"settings.language.hint.none" = "未选择语言 —— Whisper 将自动识别";
+"settings.language.hint.single" = "→ %@ —— 准确度最佳";
+"settings.language.hint.multiple" = "多语言 —— Whisper 将自动识别";
+
+"settings.model.status.not_downloaded" = "未下载";
+"settings.model.status.active" = "▶ 当前模型(%@)";
+"settings.model.status.downloaded" = "已下载(%@)";
+"settings.model.status.switched" = "▶ 已切换到 %@";
+"settings.model.status.download_done" = "✓ 下载完成";
+"settings.model.status.download_failed" = "✗ 下载失败";
+"settings.model.status.deleted" = "✓ 已删除(释放 %@)";
+"settings.model.status.delete_failed" = "✗ 删除失败";
+"settings.model.delete.title" = "删除模型?";
+"settings.model.delete.body" = "删除 %1$@(%2$@)? 之后可以重新下载。";
+
+"settings.hotkey.conflict" = "⚠ 冲突: %@";
+
+/* ── Whisper 模型说明 ───────────────────────────────────── */
+"model.large_v3.note" = "质量最佳 · 多语言 · 标点完整 · ~1× 实时";
+"model.large_v3_turbo.note" = "~8× 速度 · 多语言 · 不支持翻译 · 标点较弱";
+"model.small.note" = "轻量 · 主要面向英语 · 中文准确度 ~25% WER";
+
+/* ── 下载进度 ───────────────────────────────────────────── */
+"download.starting" = "正在下载 %@...";
+"download.progress" = "下载中... %.0f%%";
+"download.complete" = "下载完成";
+"download.error" = "错误: %@";
+
+/* ── 翻译浮层 ───────────────────────────────────────────── */
+"translation.copy" = "复制";
