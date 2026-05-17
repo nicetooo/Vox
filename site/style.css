@@ -1,0 +1,271 @@
+/* ── Reset / Base ─────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #0a0a0a;
+  color: #e8e8e8;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+               "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 64px 24px 96px;
+}
+
+/* ── Typography ──────────────────────────────────────────── */
+
+h1, h2, h3 {
+  margin: 0;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+h1 { font-size: 56px; line-height: 1.1; }
+h2 { font-size: 28px; margin-bottom: 24px; }
+h3 { font-size: 18px; margin-bottom: 8px; }
+
+p { margin: 0 0 12px; color: #c4c4c4; }
+p:last-child { margin-bottom: 0; }
+
+a {
+  color: #8cccff;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+a:hover { color: #b3dcff; text-decoration: underline; }
+
+code {
+  font-family: "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #c4c4c4;
+}
+
+.muted { color: #888; font-size: 14px; }
+
+/* ── Hero ────────────────────────────────────────────────── */
+
+.hero {
+  text-align: center;
+  padding: 48px 0 72px;
+}
+
+.logo { margin-bottom: 28px; display: flex; justify-content: center; }
+.logo-icon {
+  width: 80px;
+  height: 80px;
+  color: #8cccff;
+  filter: drop-shadow(0 0 28px rgba(140, 204, 255, 0.4));
+}
+
+.tagline {
+  font-size: 22px;
+  color: #d8d8d8;
+  margin: 16px auto 12px;
+  max-width: 640px;
+  font-weight: 400;
+}
+
+.sub-tagline {
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 36px;
+}
+
+.cta-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 12px 24px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  letter-spacing: -0.01em;
+}
+
+.btn.primary {
+  background: rgb(51, 115, 217);
+  color: #fff;
+  box-shadow: 0 0 24px rgba(51, 115, 217, 0.3);
+}
+.btn.primary:hover {
+  background: rgb(64, 130, 230);
+  text-decoration: none;
+  transform: translateY(-1px);
+  box-shadow: 0 0 32px rgba(51, 115, 217, 0.5);
+}
+
+.btn.ghost {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8e8e8;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.1);
+  text-decoration: none;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.req-note {
+  color: #666;
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+/* ── Sections ────────────────────────────────────────────── */
+
+section { margin-bottom: 72px; }
+section h2 { color: #e8e8e8; }
+
+/* ── Features Grid ───────────────────────────────────────── */
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.feature {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 24px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.feature:hover {
+  border-color: rgba(140, 204, 255, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.feature-emoji { font-size: 28px; margin-bottom: 14px; }
+.feature h3 { color: #e8e8e8; }
+.feature p { font-size: 14px; }
+.feature .feature-foot {
+  color: #666;
+  font-size: 12px;
+  margin-top: 10px;
+}
+.feature code { font-size: 11.5px; }
+
+/* ── Hotkeys table ───────────────────────────────────────── */
+
+.hotkeys table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.hotkeys th, .hotkeys td {
+  padding: 14px 20px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 14px;
+}
+.hotkeys tbody tr:last-child td { border-bottom: none; }
+.hotkeys th { color: #888; font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; background: rgba(255, 255, 255, 0.02); }
+.hotkeys td { color: #d8d8d8; }
+.hotkeys td:first-child { width: 40%; }
+
+kbd {
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: #e8e8e8;
+}
+
+/* ── Install ─────────────────────────────────────────────── */
+
+.install ol {
+  padding-left: 24px;
+  color: #c4c4c4;
+}
+.install ol > li { margin-bottom: 12px; }
+.install ul { margin-top: 8px; padding-left: 20px; color: #b0b0b0; }
+.install ul li { margin-bottom: 4px; font-size: 14px; }
+
+/* ── Models ──────────────────────────────────────────────── */
+
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.model {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 18px 22px;
+}
+
+.model-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.model-name { font-size: 16px; font-weight: 600; color: #e8e8e8; }
+.model-size { font-size: 13px; color: #888; font-variant-numeric: tabular-nums; }
+.model p { font-size: 13.5px; color: #a8a8a8; margin: 0; }
+
+/* ── Footer ──────────────────────────────────────────────── */
+
+footer {
+  text-align: center;
+  padding-top: 48px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.footer-row {
+  color: #888;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+.footer-row a { color: #b3dcff; }
+.footer-row .sep { margin: 0 12px; color: #444; }
+
+.copyright {
+  color: #555;
+  font-size: 12px;
+  margin: 0;
+}
+
+/* ── Mobile ──────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  main { padding: 32px 20px 64px; }
+  .hero { padding: 32px 0 56px; }
+  h1 { font-size: 40px; }
+  h2 { font-size: 22px; }
+  .tagline { font-size: 18px; }
+  .feature-grid { grid-template-columns: 1fr; }
+  .hotkeys th, .hotkeys td { padding: 12px 14px; }
+  .cta-row .btn { width: 100%; text-align: center; }
+}

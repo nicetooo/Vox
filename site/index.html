@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Znote — Voice-to-text + Translate, native on macOS</title>
+<meta name="description" content="A native Swift macOS menu bar app for push-to-talk voice-to-text, instant translation, screenshot, and history. Powered by WhisperKit, runs entirely on-device on Apple Silicon." />
+<meta name="theme-color" content="#0a0a0a" />
+<link rel="icon" type="image/svg+xml" href="icon.svg" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<main>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="logo">
+      <svg class="logo-icon" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="12" y="22" width="8" height="20" rx="4" fill="currentColor" opacity="0.85"/>
+        <rect x="28" y="14" width="8" height="36" rx="4" fill="currentColor"/>
+        <rect x="44" y="22" width="8" height="20" rx="4" fill="currentColor" opacity="0.85"/>
+      </svg>
+    </div>
+    <h1>Znote</h1>
+    <p class="tagline">Push-to-talk voice-to-text. Instant translation. Native macOS menu bar.</p>
+    <p class="sub-tagline">100% on-device · No cloud · No subscription · Apple Silicon optimized</p>
+
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/nicetooo/Znote/releases/latest" target="_blank" rel="noopener">
+        Download for macOS
+      </a>
+      <a class="btn ghost" href="https://github.com/nicetooo/Znote" target="_blank" rel="noopener">
+        View on GitHub
+      </a>
+    </div>
+    <p class="req-note">Apple Silicon · macOS 14+</p>
+  </section>
+
+  <!-- Features -->
+  <section class="features">
+    <h2>What it does</h2>
+    <div class="feature-grid">
+
+      <div class="feature">
+        <div class="feature-emoji">🎙</div>
+        <h3>Voice → Text</h3>
+        <p>Hold Right ⌘, speak, release. Text is pasted at your cursor wherever you are — Slack, mail, code, anywhere.</p>
+        <p class="feature-foot">WhisperKit (CoreML) · runs on Apple Neural Engine</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-emoji">🌐</div>
+        <h3>Translate selection</h3>
+        <p>Select any text in any app, tap Right ⌥. A floating overlay shows the translation. One click copies it.</p>
+        <p class="feature-foot">Auto-detect language · Chinese ↔ English</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-emoji">📜</div>
+        <h3>History</h3>
+        <p>Every transcription and translation is saved locally. Search, filter by date, expand long entries, copy or delete.</p>
+        <p class="feature-foot">SQLite · stored in <code>~/Library/Application Support/Znote/</code></p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-emoji">📸</div>
+        <h3>Screenshot</h3>
+        <p>Double-tap Right ⌥ to trigger macOS region screenshot — straight to clipboard, ready to paste.</p>
+        <p class="feature-foot">Uses native screencapture</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Hotkeys -->
+  <section class="hotkeys">
+    <h2>Default hotkeys</h2>
+    <table>
+      <thead>
+        <tr><th>Gesture</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><kbd>Right ⌘</kbd> hold</td><td>Voice → Text (push-to-talk)</td></tr>
+        <tr><td><kbd>Right ⌘</kbd> tap</td><td>Toggle History window</td></tr>
+        <tr><td><kbd>Right ⌥</kbd> tap</td><td>Translate selected text</td></tr>
+        <tr><td><kbd>Right ⌥</kbd> double-tap</td><td>Screenshot to clipboard</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">Every hotkey is customizable in Settings — pick any side (Left/Right) + modifier (⌘/⌥/⌃). Tap actions can be swapped to double-tap and vice versa.</p>
+  </section>
+
+  <!-- Install -->
+  <section class="install">
+    <h2>Install</h2>
+    <ol>
+      <li>Download <code>Znote.dmg</code> from <a href="https://github.com/nicetooo/Znote/releases/latest" target="_blank" rel="noopener">latest release</a>, double-click to mount, drag <strong>Znote.app</strong> to <strong>Applications</strong>.</li>
+      <li>Launch from Spotlight or <code>/Applications/Znote.app</code>. A waveform icon appears in your menu bar.</li>
+      <li>Grant three permissions in <strong>System Settings → Privacy &amp; Security</strong>:
+        <ul>
+          <li><strong>Microphone</strong> — for voice recording</li>
+          <li><strong>Accessibility</strong> — for clipboard Cmd+C/V simulation</li>
+          <li><strong>Input Monitoring</strong> — for detecting Right ⌘ / Right ⌥ hotkeys</li>
+        </ul>
+      </li>
+      <li>On first transcription, the Whisper model downloads (~1.6 GB for Turbo, ~3 GB for Large V3). One-time, then cached.</li>
+    </ol>
+  </section>
+
+  <!-- Models -->
+  <section class="models">
+    <h2>Models</h2>
+    <div class="model-list">
+      <div class="model">
+        <div class="model-head">
+          <span class="model-name">Large V3</span>
+          <span class="model-size">~3 GB</span>
+        </div>
+        <p>Best quality · multilingual (99 languages) · proper punctuation · ~1× realtime.</p>
+      </div>
+      <div class="model">
+        <div class="model-head">
+          <span class="model-name">Large V3 Turbo</span>
+          <span class="model-size">~1.6 GB</span>
+        </div>
+        <p>~8× faster than Large V3 · multilingual · weaker punctuation. Great for low-latency dictation.</p>
+      </div>
+      <div class="model">
+        <div class="model-head">
+          <span class="model-name">Small</span>
+          <span class="model-size">~500 MB</span>
+        </div>
+        <p>Lightweight · English-mainly · Chinese accuracy noticeably degraded. Pick when disk space is tight.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-row">
+      <a href="https://github.com/nicetooo/Znote" target="_blank" rel="noopener">GitHub</a>
+      <span class="sep">·</span>
+      <a href="https://github.com/nicetooo/Znote/releases" target="_blank" rel="noopener">Releases</a>
+      <span class="sep">·</span>
+      <a href="https://github.com/nicetooo/Znote/issues" target="_blank" rel="noopener">Issues</a>
+    </div>
+    <p class="copyright">Open source · MIT license · Built with WhisperKit</p>
+  </footer>
+
+</main>
+</body>
+</html>
