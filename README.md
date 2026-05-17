@@ -1,120 +1,135 @@
 # Znote
 
-macOS menu bar app for voice-to-text and instant translation. Runs entirely on-device using [WhisperKit](https://github.com/argmaxinc/WhisperKit) (pure Swift + CoreML) — no cloud APIs, no subscriptions, no Python, no external dependencies.
+Native macOS menu bar app for voice-to-text, voice → English translation, screen capture (screenshot + recording), and translation of selected text. 100% on-device speech via [WhisperKit](https://github.com/argmaxinc/WhisperKit) — no cloud APIs, no subscriptions, no Python.
+
+🌐 [Project site](https://nicetooo.github.io/Znote/) · 📥 [Latest release](https://github.com/nicetooo/Znote/releases/latest)
 
 ## What it does
 
 | Shortcut | Action |
 |----------|--------|
 | **Hold Right ⌘** | Push-to-talk → transcribes speech → pastes text at cursor |
-| **Tap Right ⌘** | Toggle history window |
-| **Tap Right ⌥** | Translate selected text (Chinese ↔ English) |
-| **Double-tap Right ⌥** | Screenshot selection → clipboard |
+| **Tap Right ⌘** | Toggle History window |
+| **Hold Right ⌥** | Push-to-talk → translates speech to English → pastes |
+| **Tap Right ⌥** | Translate selected text (auto-detected source ↔ English/Chinese) |
+| **Double-tap Right ⌥** | Region capture → pick 📷 Capture or 🎥 Record |
 
-- **Voice input**: Hold the key, speak, release. Text is pasted wherever your cursor is.
-- **Translation**: Select any text in any app, tap the key. A floating overlay shows the translation.
-- **History**: All voice inputs and translations are saved locally (SQLite). Search, filter by date, copy, delete.
-- **Screenshot**: Double-tap triggers macOS interactive screenshot tool, result goes to clipboard.
+All hotkeys are rebindable in Settings — pick side, modifier, and gesture per action.
+
+- **Voice → text**: WhisperKit (CoreML) on the Apple Neural Engine / GPU. Multi-language, with optional language pinning for best accuracy.
+- **Voice → English** *(any language)*: Same push-to-talk flow but Whisper runs `task=translate` — speak Chinese / Japanese / French / etc., get English. Requires Large V3 (Turbo doesn't support translate).
+- **Region capture**: Drag a rectangle (works across external displays), then a small picker asks Capture or Record.
+  - Keyboard: **↵** = Capture, **R** = Record, **ESC** = cancel
+  - Screenshot → PNG saved to disk + image on the clipboard
+  - Recording → MOV (H.264 video + AAC system audio) via ScreenCaptureKit; the floating stop pill in the corner finalizes the file
+- **Translation overlay**: NLLanguageRecognizer + Google Translate free endpoint. Result floats in a dark panel with a Copy button.
+- **History**: SQLite + on-disk media. Filter pills: All / Voice / Translation / Screenshot / Recording. Screenshots show inline previews, recordings play in an embedded AVPlayer, the Folder button reveals media in Finder.
 
 ## Requirements
 
-- Apple Silicon Mac (M1/M2/M3/M4)
+- Apple Silicon Mac (M1 / M2 / M3 / M4)
 - macOS 14 (Sonoma) or later
 - That's it — no Python, no pip, no ffmpeg, no brew
 
 ## Install
 
-**From release (recommended):**
+**From release** *(recommended)*
 
-Download `Znote.zip` or `Znote.dmg` from [Releases](https://github.com/nicetooo/Znote/releases), unzip / mount, drag `Znote.app` to `/Applications`.
+Download from [Releases](https://github.com/nicetooo/Znote/releases/latest) or the [download button on the site](https://nicetooo.github.io/Znote/). Both `.dmg` and `.zip` are signed + notarized by Apple — double-click to run.
 
-**Build from source:**
+**Build from source**
 
 ```bash
-git clone https://github.com/nicetooo/Znote.git
+git clone git@github.com:nicetooo/Znote.git
 cd Znote
-swift build -c release
-mkdir -p build/Znote.app/Contents/{MacOS,Resources}
-cp .build/release/Znote build/Znote.app/Contents/MacOS/
-cp Sources/Znote/Resources/Info.plist build/Znote.app/Contents/
-cp Sources/Znote/Resources/Znote.icns build/Znote.app/Contents/Resources/
-codesign --force --sign - build/Znote.app
-open build/Znote.app
+./sign.sh             # debug build + sign + refresh build/Znote.app
+./sign.sh --install   # also copy to /Applications and relaunch
 ```
+
+`sign.sh` uses the project's stable Developer ID identity. You'll need your own certificate if you fork — see `CLAUDE.md` for the manual `codesign` command.
 
 ## Permissions
 
-Znote needs three macOS permissions (System Settings → Privacy & Security):
+Znote needs four macOS permissions (System Settings → Privacy & Security):
 
 1. **Accessibility** — to simulate Cmd+C/V for clipboard operations
 2. **Input Monitoring** — to detect Right ⌘ and Right ⌥ key events
-3. **Microphone** — to record audio for voice input
+3. **Microphone** — for voice input
+4. **Screen Recording** — for region capture (screenshot + recording)
 
-The menu bar icon shows orange warnings if permissions are missing — click them to jump to the right settings page.
+The menu bar icon shows orange warnings for missing Accessibility / Input Monitoring. Microphone / Screen Recording trigger the standard system dialogs on first use.
 
-> Note: Releases are signed with a stable Developer ID Application certificate, so TCC permissions persist across upgrades. If you rebuild locally with ad-hoc signing, permissions reset on each rebuild — use `./sign.sh` to sign with the stable identity.
+> Releases are signed with a stable Developer ID Application certificate, so TCC permissions persist across upgrades. If you rebuild locally with ad-hoc signing, permissions reset on each rebuild — use `./sign.sh` to keep them.
 
 ## Settings
 
 Click the waveform icon in the menu bar → Settings:
 
-- **Languages**: Select which languages you speak. If only one is selected, Whisper is forced to that language (best accuracy). With multiple, it auto-detects and verifies the result.
-- **Whisper Model**: Download and switch between models. Default is `large-v3` (best quality). Models are stored in `~/Library/Application Support/Znote/Models/`.
-- **Silence Filter**: Adjust microphone sensitivity and minimum recording duration to prevent Whisper hallucination on silent/short recordings.
-- **Hotkeys**: Rebind each action to a side (left/right) + modifier (⌘/⌥/⌃). The gesture (hold / tap / double-tap) is fixed per action.
+- **Languages** — pick which language(s) you speak. Exactly one selected → Whisper is pinned to that language (best accuracy). Multiple → auto-detect with cross-verification + retry.
+- **Whisper Model** — download / switch between models. Default is `large-v3`. Stored at `~/Library/Application Support/Znote/Models/`.
+- **Silence Filter** — microphone sensitivity + minimum recording duration to suppress Whisper's silence hallucinations.
+- **Hotkeys** — for each of the 5 actions, choose side (L/R) + modifier (⌘/⌥/⌃) + gesture (Tap / Double-tap / Hold). Voice Input and Voice → English are locked to Hold.
 
 ### Available models
 
 | Model | Size | Notes |
 |-------|------|-------|
-| large-v3 | ~3 GB | Best quality (default) |
-| large-v2 | ~3 GB | Previous best |
-| distil-large-v3 | ~1.5 GB | Fast, English-focused (Chinese accuracy degraded) |
-| medium | ~1.5 GB | Balanced |
-| small | ~500 MB | Lightweight |
-| base | ~150 MB | Minimal |
-| tiny | ~80 MB | Fastest, lowest quality |
+| **Large V3** | ~3 GB | Best quality · multilingual · proper punctuation · supports translate |
+| Large V3 Turbo | ~1.6 GB | ~8× faster · multilingual · weaker punctuation · **no translate** |
+| Small | ~500 MB | Lightweight · English-focused (Chinese accuracy degraded) |
+
+> Voice → English needs `task=translate`, which Turbo dropped when it pruned the decoder for speed. Use Large V3 for that hotkey.
 
 ## How it works
 
-- **Speech recognition**: Records audio via `AVAudioEngine`, transcribes with WhisperKit (CoreML, runs locally on Apple Silicon GPU/ANE). Model preloads at app startup for instant transcription. Merges multi-line output, optionally converts between simplified/traditional Chinese.
-- **Language verification**: When multiple languages are selected, Whisper auto-detects. If the result language doesn't match your selected set, it automatically retries with a forced language.
-- **Translation**: Uses `NLLanguageRecognizer` for language detection + Google Translate free endpoint. Result shown in a floating dark overlay with a copy button.
-- **History**: SQLite database at `~/Library/Application Support/Znote/history.sqlite`. Search, date filtering (Today / 7 days / 30 days), expandable rows.
-- **Hotkeys**: Global `CGEventTap` monitors modifier keys. State machine syncs from `event.flags` on every event to recover from `.tapDisabledByUserInput` drops.
+- **Speech recognition**: `AVAudioEngine` records audio, WhisperKit transcribes via CoreML on ANE / GPU. The model preloads at app startup. Output is cleaned (special-token strip, multi-line merge), with optional Hans ↔ Hant conversion.
+- **Voice translation**: Same audio pipeline, but `DecodingOptions.task = .translate`. Output is always English regardless of source; language verification / Hans-Hant conversion are skipped.
+- **Translation overlay**: NLLanguageRecognizer detects source → Google's free `translate.googleapis.com/translate_a/single?client=gtx` endpoint → dark floating panel.
+- **Region capture**: A custom NSPanel overlay per NSScreen handles the drag. Crosshair cursor is forced via a tracking area + `cursorUpdate(with:)` (because `addCursorRect` is unreliable on borderless nonactivating panels). Selected rect is in NSScreen coords (bottom-left); converted to top-left primary-display pixels for `screencapture -R -o -x`, and to display-local top-left for `SCStreamConfiguration.sourceRect`.
+- **Screen recording**: `SCStream` cropped to the selection at the native scale of whichever screen the region's center sits on. Output through `AVAssetWriter` (H.264 video + AAC 48kHz stereo for system audio). `SCContentFilter` excludes all Znote-owned windows so the floating stop pill isn't baked into the recording.
+- **History**: SQLite at `~/Library/Application Support/Znote/history.sqlite` with an `image_path` column reused for both PNG screenshots and MOV recordings; `delete()` cleans the on-disk file too. Inline previews via `NSImageView` for images and `AVPlayerView` for video.
+- **Hotkeys**: Global `CGEventTap` on `.flagsChanged` + `.keyDown`. The state machine syncs from `event.flags` on every event so a missed press/release self-heals on the next event (e.g. after a `tapDisabledByUserInput` drop). Multiple gestures (tap / double-tap / hold) can coexist on the same physical key.
 
 ## Project structure
 
 ```
 Sources/
-├── CSQLite/                    # C shim for system sqlite3
+├── CSQLite/                       # C shim for system sqlite3
 └── Znote/
-    ├── main.swift              # App entry point, logging setup
-    ├── AppDelegate.swift       # Menu bar, coordinates all services
-    ├── KeyMonitor.swift        # CGEventTap hotkey detection (flag-sync state machine)
-    ├── AudioRecorder.swift     # AVAudioEngine recording + audio levels
-    ├── WhisperService.swift    # WhisperKit transcription + language verification
-    ├── TranslationService.swift # NLLanguageRecognizer + Google Translate
-    ├── SystemIntegration.swift # Cmd+C/V simulation, clipboard
-    ├── RecordingOverlay.swift  # Floating waveform animation during recording
-    ├── TranslationOverlay.swift # Floating panel with translation result
-    ├── HistoryStore.swift      # SQLite CRUD operations
-    ├── HistoryWindow.swift     # Dark floating history panel
-    ├── Settings.swift          # UserDefaults, hotkey customization, model management
-    └── SettingsWindow.swift    # Settings UI
+    ├── main.swift                 # App entry, custom log()
+    ├── AppDelegate.swift          # Menu bar + service coordinator + recording mode
+    ├── KeyMonitor.swift           # CGEventTap, multi-gesture flag-sync state machine
+    ├── AudioRecorder.swift        # AVAudioEngine + RMS level
+    ├── WhisperService.swift       # WhisperKit transcribe / translate
+    ├── TranslationService.swift   # NLLanguageRecognizer + Google Translate
+    ├── SystemIntegration.swift    # Cmd+C/V simulation + clipboard save/restore
+    ├── RecordingOverlay.swift     # Waveform animation panel (+ "→ English" hint)
+    ├── TranslationOverlay.swift   # Translation result panel
+    ├── RegionSelector.swift       # Multi-display region selector (dim + crosshair + W×H label)
+    ├── CaptureActionPicker.swift  # 📷 Capture / 🎥 Record / ✕ picker, ↵/R/ESC shortcuts
+    ├── ScreenRecorder.swift       # SCStream + AVAssetWriter pipeline (video + audio)
+    ├── RecordingStopButton.swift  # Floating stop pill with elapsed counter
+    ├── HistoryStore.swift         # SQLite CRUD + on-disk media cleanup
+    ├── HistoryWindow.swift        # Dark panel: search, filter pills, inline previews + AVPlayer
+    ├── Settings.swift             # UserDefaults, hotkey + model + language types
+    └── SettingsWindow.swift       # Settings UI
 ```
 
 ## Troubleshooting
 
-**"Failed to create event tap"** — Grant Input Monitoring permission and restart the app.
+**"Failed to create event tap"** — Grant Input Monitoring permission and restart.
 
-**Voice input produces no text** — Check the menu bar for orange permission warnings. Ensure the model is downloaded in Settings.
+**Voice input produces no text** — Check the menu bar for orange permission warnings; ensure the model is downloaded in Settings.
 
-**First launch is slow** — CoreML compiles the model for your hardware on first use. This is a one-time process; subsequent launches load from cache.
+**Voice → English outputs original-language text** — Your active model is Turbo. Turbo doesn't support `task=translate` — switch to Large V3 in Settings.
 
-**"Loading model..." when recording** — The model is still loading in the background. The overlay will switch to the waveform automatically once ready.
+**Recording fails with "Couldn't start recording"** — First-time use needs Screen Recording permission; the alert links to the right settings page. After granting, relaunch the app.
 
-**Chinese text comes out as traditional** — In Settings, select "简体中文 (Simplified)" only (not both). The app will auto-convert output to simplified Chinese.
+**First launch is slow** — CoreML compiles the model for your hardware on first use. One-time; cached afterwards.
+
+**"Loading model..." overlay during recording** — Model is still warming up; switches to the live waveform automatically once ready.
+
+**Chinese output is traditional** — In Settings → Languages, pick "简体中文 (Simplified)" only (not both). Output auto-converts simplified.
 
 ## License
 

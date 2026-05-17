@@ -4,7 +4,7 @@ import AppKit
 /// Lets them pick: 📷 capture an image, 🎥 record video, or cancel.
 final class CaptureActionPicker {
     private var panel: NSPanel?
-    private var localEscMonitor: Any?
+    private var localKeyMonitor: Any?
 
     private var onCapture: (() -> Void)?
     private var onRecord: (() -> Void)?
@@ -24,7 +24,7 @@ final class CaptureActionPicker {
         self.onCancel = onCancel
 
         let w: CGFloat = 220
-        let h: CGFloat = 52
+        let h: CGFloat = 66       // 52 for buttons + 14 for keyboard hint row
         let gap: CGFloat = 12
 
         // Prefer below the selection; flip above if no room.
@@ -54,20 +54,31 @@ final class CaptureActionPicker {
         p.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        // ESC dismisses
-        localEscMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {  // ESC
+        // Keyboard shortcuts:
+        //   Return / Enter → Capture (default / primary action)
+        //   R              → Record
+        //   ESC            → Cancel
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            switch event.keyCode {
+            case 36, 76:        // Return, numpad Enter
+                self?.handleCapture()
+                return nil
+            case 15:            // R
+                self?.handleRecord()
+                return nil
+            case 53:            // ESC
                 self?.handleCancel()
                 return nil
+            default:
+                return event
             }
-            return event
         }
         self.panel = p
         log("CaptureActionPicker: shown at \(origin)")
     }
 
     func dismiss() {
-        if let m = localEscMonitor { NSEvent.removeMonitor(m); localEscMonitor = nil }
+        if let m = localKeyMonitor { NSEvent.removeMonitor(m); localKeyMonitor = nil }
         panel?.orderOut(nil)
         panel = nil
         onCapture = nil
@@ -98,22 +109,47 @@ final class CaptureActionPicker {
         root.layer?.borderWidth = 1
         root.appearance = NSAppearance(named: .darkAqua)
 
+        // Button row sits in the top portion; hint row is the bottom 14px
+        // (4px top pad, 10pt text). NSView coords are bottom-left origin, so
+        // buttons get a higher y than hints.
+        let btnY: CGFloat = 22
+        let hintY: CGFloat = 4
+
         let captureBtn = PickerButton(symbol: "camera.fill", title: "Capture", accent: true)
-        captureBtn.frame = NSRect(x: 8, y: 8, width: 92, height: 36)
+        captureBtn.frame = NSRect(x: 8, y: btnY, width: 92, height: 36)
         captureBtn.onClick = { [weak self] in self?.handleCapture() }
         root.addSubview(captureBtn)
 
         let recordBtn = PickerButton(symbol: "video.fill", title: "Record", accent: false)
-        recordBtn.frame = NSRect(x: 104, y: 8, width: 78, height: 36)
+        recordBtn.frame = NSRect(x: 104, y: btnY, width: 78, height: 36)
         recordBtn.onClick = { [weak self] in self?.handleRecord() }
         root.addSubview(recordBtn)
 
         let cancelBtn = PickerButton(symbol: "xmark", title: nil, accent: false, destructive: true)
-        cancelBtn.frame = NSRect(x: 186, y: 8, width: 28, height: 36)
+        cancelBtn.frame = NSRect(x: 186, y: btnY, width: 28, height: 36)
         cancelBtn.onClick = { [weak self] in self?.handleCancel() }
         root.addSubview(cancelBtn)
 
+        // Keyboard hint row — small muted glyphs centered under each button.
+        // Enter uses ↵ (Unicode 'Return Symbol'), Record uses the letter R,
+        // Cancel uses 'esc'.
+        addHint("↵", under: captureBtn.frame, in: root, y: hintY)
+        addHint("R", under: recordBtn.frame, in: root, y: hintY)
+        addHint("esc", under: cancelBtn.frame, in: root, y: hintY)
+
         return root
+    }
+
+    /// Draws a tiny shortcut-key glyph centered horizontally under a button.
+    private func addHint(_ text: String, under btnFrame: NSRect, in root: NSView, y: CGFloat) {
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 10, weight: .medium)
+        label.textColor = NSColor(white: 0.55, alpha: 1.0)
+        label.alignment = .center
+        label.drawsBackground = false
+        label.isBordered = false
+        label.frame = NSRect(x: btnFrame.minX, y: y, width: btnFrame.width, height: 14)
+        root.addSubview(label)
     }
 }
 

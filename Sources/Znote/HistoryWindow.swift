@@ -447,11 +447,13 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         updateFolderButtonVisibility()
     }
 
-    /// Folder button only makes sense when browsing media (screenshots / recordings).
-    /// Hide it for text-only filters and collapse its layout space so there's no gap.
+    /// Folder button is visible whenever media might be on screen — All,
+    /// Screenshot and Recording. Hidden for text-only filters (Voice,
+    /// Translation) where there's nothing to reveal on disk.
     private func updateFolderButtonVisibility() {
         let f = typeFilterIndex
-        let show = f == HistoryTypeFilter.screenshot.rawValue
+        let show = f == HistoryTypeFilter.all.rawValue
+              || f == HistoryTypeFilter.screenshot.rawValue
               || f == HistoryTypeFilter.recording.rawValue
         folderBtn?.isHidden = !show
         folderBtnWidth?.constant = show ? 64 : 0
@@ -802,7 +804,8 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
     }
 
     /// Reveal a media file in Finder when a media row is selected; otherwise
-    /// open the relevant folder (Screenshots / Recordings, picked by current filter).
+    /// open a folder picked by the current filter — Screenshots / Recordings
+    /// for those filters, Znote root for All (so the user can see both).
     private func openScreenshotsFolder() {
         let selected = tableView?.selectedRowIndexes ?? IndexSet()
         if let idx = selected.first, idx < records.count,
@@ -817,9 +820,15 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
 
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let znoteDir = appSupport.appendingPathComponent("Znote")
-        let subdir = (HistoryTypeFilter(rawValue: typeFilterIndex) == .recording)
-            ? "Recordings" : "Screenshots"
-        let dir = znoteDir.appendingPathComponent(subdir)
+        let dir: URL
+        switch HistoryTypeFilter(rawValue: typeFilterIndex) ?? .all {
+        case .recording:
+            dir = znoteDir.appendingPathComponent("Recordings")
+        case .screenshot:
+            dir = znoteDir.appendingPathComponent("Screenshots")
+        default:  // .all — open Znote root so user sees both Screenshots/ and Recordings/
+            dir = znoteDir
+        }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(dir)
         log("History: opened folder \(dir.path)")
