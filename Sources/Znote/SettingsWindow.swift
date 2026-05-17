@@ -50,9 +50,11 @@ private class DarkToggle: NSView {
         if bounds.contains(loc) {
             isOn.toggle()
             updateAppearance()
+            needsDisplay = true  // draw(_:) renders checkmark/title — must trigger redraw
             onToggle?(self)
         } else {
             updateAppearance()
+            needsDisplay = true  // restore checkmark/title after drag-away
         }
     }
     override func draw(_ dirtyRect: NSRect) {
