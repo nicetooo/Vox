@@ -26,8 +26,8 @@
     <p class="sub-tagline">100% on-device · No cloud · No subscription · Apple Silicon optimized</p>
 
     <div class="cta-row">
-      <a class="btn primary" href="https://github.com/nicetooo/Znote/releases/latest" target="_blank" rel="noopener">
-        Download for macOS
+      <a id="download-btn" class="btn primary" href="https://github.com/nicetooo/Znote/releases/latest/download/Znote.dmg" rel="noopener">
+        Download for macOS<span class="btn-version" id="download-version">v0.6.0</span>
       </a>
       <a class="btn ghost" href="https://github.com/nicetooo/Znote" target="_blank" rel="noopener">
         View on GitHub
@@ -147,5 +147,21 @@
   </footer>
 
 </main>
+
+<script>
+  // Replace the hardcoded version on the download button with the real latest
+  // release tag from GitHub. If the API is unreachable (rate-limited, offline,
+  // etc.) the static "v0.6.0" fallback is left in place — and the href already
+  // points to /releases/latest/download/Znote.dmg, which GitHub redirects to
+  // whatever the latest release's DMG actually is, so the download still works.
+  fetch('https://api.github.com/repos/nicetooo/Znote/releases/latest')
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(data => {
+      if (!data || !data.tag_name) return;
+      const el = document.getElementById('download-version');
+      if (el) el.textContent = data.tag_name;
+    })
+    .catch(() => { /* fall back to hardcoded version */ });
+</script>
 </body>
 </html>
