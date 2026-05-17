@@ -90,15 +90,12 @@ jobs:
           name: Znote.app
           path: Znote.zip
 
-      # Only publish to GitHub Release when the repo has the Developer ID
-      # signing secret configured. Without it, the .app is ad-hoc signed and
-      # would be rejected by Gatekeeper — better to skip than ship broken.
-      # For unsigned-secrets setups: build locally with ./package.sh + ./dmg.sh
-      # and upload to the release manually.
+      # Always create the Release page on tag push so it's visible immediately.
+      # When repo signing secrets aren't set, the published Znote.zip will be
+      # ad-hoc signed (Gatekeeper will reject it) — replace it with the local
+      # signed+notarized build from ./package.sh + ./dmg.sh after the workflow.
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/') && env.SIGNING_IDENTITY != ''
-        env:
-          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: Znote.zip
@@ -112,11 +109,3 @@ jobs:
             5. Launch from Spotlight or `/Applications/Znote.app`
 
             **Requires:** Apple Silicon Mac, macOS 14+
-
-      - name: Note when Release publish was skipped
-        if: startsWith(github.ref, 'refs/tags/') && env.SIGNING_IDENTITY == ''
-        env:
-          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
-        run: |
-          echo "::notice::SIGNING_IDENTITY secret not set — skipped publishing to GitHub Release."
-          echo "::notice::Build local signed+notarized artifacts with ./package.sh && ./dmg.sh, then upload manually to the tag."
