@@ -350,16 +350,59 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Screenshot
 
+    /// Returns the directory where screenshots are saved, creating it if necessary.
+    private func screenshotsDirectory() -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("Znote").appendingPathComponent("Screenshots")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// `screencapture -i <file>`: interactive region select → save PNG to file.
+    /// On success we also push the image bytes to the clipboard so the user can paste,
+    /// and record an entry in History pointing at the saved file.
+    /// On cancel (ESC) screencapture exits 0 but writes no file — we detect that and skip.
     private func takeScreenshot() {
-        DispatchQueue.main.async {
-            log("Taking screenshot to clipboard...")
+        let timestamp = DateFormatter.screenshotTimestamp.string(from: Date())
+        let filename = "screenshot-\(timestamp).png"
+        let fileURL = screenshotsDirectory().appendingPathComponent(filename)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            log("Taking screenshot → \(fileURL.path)")
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-            process.arguments = ["-ic"]  // interactive selection → clipboard
+            // -i: interactive selection
+            // -o: no shadow on window captures
+            process.arguments = ["-i", "-o", fileURL.path]
             do {
                 try process.run()
+                process.waitUntilExit()
             } catch {
-                log("Screenshot failed: \(error)")
+                log("Screenshot failed to launch: \(error)")
+                return
+            }
+
+            // screencapture exits 0 even when user cancels with ESC; check the file.
+            guard FileManager.default.fileExists(atPath: fileURL.path),
+                  let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
+                log("Screenshot cancelled or empty file — skipping.")
+                // Clean up zero-byte files screencapture sometimes leaves behind.
+                try? FileManager.default.removeItem(at: fileURL)
+                return
+            }
+
+            // Put the image on the clipboard so the user can paste right away.
+            DispatchQueue.main.async {
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                if let image = NSImage(data: data) {
+                    pb.writeObjects([image])
+                } else {
+                    pb.setData(data, forType: .png)
+                }
+                log("Screenshot copied to clipboard (\(data.count) bytes)")
+
+                HistoryStore.shared.addScreenshot(path: fileURL.path)
             }
         }
     }
@@ -407,4 +450,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
     }
+}
+
+// MARK: - Helpers
+
+private extension DateFormatter {
+    /// Filesystem-safe timestamp used in screenshot filenames: `20260517-143022`.
+    static let screenshotTimestamp: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        return f
+    }()
 }

@@ -10,10 +10,17 @@ private class HistoryPanel: NSPanel {
 
 private class DarkRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
-        if isSelected {
-            NSColor(white: 0.22, alpha: 1.0).setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 6, dy: 0.5), xRadius: 8, yRadius: 8).fill()
-        }
+        guard isSelected else { return }
+        let rect = bounds.insetBy(dx: 6, dy: 1)
+
+        // Brighter gray fill — needs strong contrast vs the 0.13 panel background.
+        NSColor(white: 0.28, alpha: 1.0).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8).fill()
+
+        // 3px blue accent strip on the left so it's unmistakable.
+        let accent = NSRect(x: rect.minX + 1, y: rect.minY + 6, width: 3, height: rect.height - 12)
+        NSColor(red: 0.45, green: 0.65, blue: 1.0, alpha: 1.0).setFill()
+        NSBezierPath(roundedRect: accent, xRadius: 1.5, yRadius: 1.5).fill()
     }
     override func drawBackground(in dirtyRect: NSRect) { /* transparent */ }
     override var interiorBackgroundStyle: NSView.BackgroundStyle { .emphasized }
@@ -116,8 +123,8 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
     private var records: [HistoryRecord] = []
     private var expandedRow: Int? = nil
     private var localKeyMonitor: Any?
-    private var dateFilterIndex = 0
-    private var dateButtons: [PillToggle] = []
+    private var typeFilterIndex = 0
+    private var typeButtons: [PillToggle] = []
     private var copyBtn: DarkActionButton?
 
     private lazy var timeFormatter: DateFormatter = {
@@ -173,14 +180,19 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         removeKeyMonitor()
         panel?.orderOut(nil)
         panel = nil
-        dateButtons = []
+        typeButtons = []
         expandedRow = nil
+        // Reset filter state too — next open rebuilds pills with "All" highlighted
+        // (selected: i == 0 hardcoded in buildContent), so the state must match.
+        typeFilterIndex = 0
     }
 
     func windowWillClose(_ n: Notification) {
         removeKeyMonitor()
         panel = nil
-        dateButtons = []
+        typeButtons = []
+        expandedRow = nil
+        typeFilterIndex = 0
     }
 
     // MARK: - ESC to close
@@ -235,23 +247,23 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         self.searchField = search
         root.addSubview(search)
 
-        // --- Date filter pills ---
+        // --- Type filter pills ---
         let pillStack = NSStackView()
         pillStack.orientation = .horizontal
         pillStack.spacing = 6
         pillStack.translatesAutoresizingMaskIntoConstraints = false
-        dateButtons = []
+        typeButtons = []
 
-        for (i, label) in ["All", "Today", "7 Days", "30 Days"].enumerated() {
+        for (i, label) in ["All", "Voice", "Translation", "Screenshot"].enumerated() {
             let pill = PillToggle(title: label, selected: i == 0)
             pill.index = i
-            pill.onClick = { [weak self] tag in self?.dateFilterTapped(tag) }
+            pill.onClick = { [weak self] tag in self?.typeFilterTapped(tag) }
             pill.translatesAutoresizingMaskIntoConstraints = false
             let tw = label.size(withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium)]).width
             pill.widthAnchor.constraint(equalToConstant: tw + 24).isActive = true
             pill.heightAnchor.constraint(equalToConstant: 26).isActive = true
             pillStack.addArrangedSubview(pill)
-            dateButtons.append(pill)
+            typeButtons.append(pill)
         }
         root.addSubview(pillStack)
 
@@ -270,7 +282,10 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         let table = NSTableView()
         table.style = .plain
         table.rowSizeStyle = .custom
-        table.selectionHighlightStyle = .none  // custom row view handles it
+        // .regular keeps AppKit calling drawSelection on the row view; our DarkRowView
+        // overrides drawSelection to paint our own highlight (not the system blue).
+        // Setting .none here would skip the callback entirely and selection becomes invisible.
+        table.selectionHighlightStyle = .regular
         table.allowsMultipleSelection = false
         table.allowsEmptySelection = true
         table.backgroundColor = .clear
@@ -383,16 +398,16 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
 
     // MARK: - Data
 
-    private func dateFilterTapped(_ index: Int) {
-        dateFilterIndex = index
-        for (i, btn) in dateButtons.enumerated() { btn.setSelected(i == index) }
+    private func typeFilterTapped(_ index: Int) {
+        typeFilterIndex = index
+        for (i, btn) in typeButtons.enumerated() { btn.setSelected(i == index) }
         reloadData()
     }
 
     private func reloadData() {
         let query = searchField?.stringValue
-        let filter = HistoryDateFilter(rawValue: dateFilterIndex) ?? .allTime
-        records = HistoryStore.shared.fetch(query: query, dateFilter: filter)
+        let filter = HistoryTypeFilter(rawValue: typeFilterIndex) ?? .all
+        records = HistoryStore.shared.fetch(query: query, typeFilter: filter)
         expandedRow = nil
         tableView?.reloadData()
         countLabel?.stringValue = "\(records.count) items"
@@ -424,8 +439,19 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         guard row < records.count else { return 50 }
         let record = records[row]
         let tableWidth = tableView.bounds.width
-        let textWidth = max(tableWidth - 170, 200)
 
+        // Screenshot: expanded row shows the image scaled to fit (cap 240px tall).
+        if record.type == .screenshot {
+            let availW = max(tableWidth - 60, 200)
+            if let path = record.imagePath, let img = NSImage(contentsOfFile: path), img.size.width > 0 {
+                let aspect = img.size.height / img.size.width
+                let fitH = min(availW * aspect, 240)
+                return 50 + fitH + 16  // header row + image + bottom pad
+            }
+            return 80  // file missing fallback
+        }
+
+        let textWidth = max(tableWidth - 170, 200)
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13)]
         let rect = (record.displayText as NSString).boundingRect(
             with: NSSize(width: textWidth, height: .greatestFiniteMagnitude),
@@ -445,14 +471,24 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         // --- Type icon (SF Symbol) ---
         let iconView = NSImageView()
         iconView.translatesAutoresizingMaskIntoConstraints = false
-        let symbolName = record.type == .voice ? "mic.fill" : "arrow.left.arrow.right"
+        let symbolName: String
+        let tint: NSColor
+        switch record.type {
+        case .voice:
+            symbolName = "mic.fill"
+            tint = NSColor(red: 0.35, green: 0.82, blue: 0.45, alpha: 1.0)  // green
+        case .translation:
+            symbolName = "arrow.left.arrow.right"
+            tint = NSColor(red: 0.45, green: 0.65, blue: 1.0, alpha: 1.0)   // blue
+        case .screenshot:
+            symbolName = "photo.fill"
+            tint = NSColor(red: 1.0, green: 0.70, blue: 0.30, alpha: 1.0)   // orange
+        }
         let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
         if let img = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
             iconView.image = img.withSymbolConfiguration(config)
         }
-        iconView.contentTintColor = record.type == .voice
-            ? NSColor(red: 0.35, green: 0.82, blue: 0.45, alpha: 1.0)
-            : NSColor(red: 0.45, green: 0.65, blue: 1.0, alpha: 1.0)
+        iconView.contentTintColor = tint
         cell.addSubview(iconView)
 
         // --- Text ---
@@ -463,12 +499,12 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         text.isBordered = false
         text.isSelectable = false
         text.translatesAutoresizingMaskIntoConstraints = false
-        if isExpanded {
+        if isExpanded && record.type != .screenshot {
             text.lineBreakMode = .byWordWrapping
             text.maximumNumberOfLines = 0
         } else {
             text.lineBreakMode = .byTruncatingTail
-            text.maximumNumberOfLines = 2
+            text.maximumNumberOfLines = isExpanded ? 1 : 2
             text.cell?.truncatesLastVisibleLine = true
         }
         cell.addSubview(text)
@@ -490,19 +526,23 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
         sep.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(sep)
 
+        // Vertical alignment strategy: anchor everything to the text's first-line baseline,
+        // which is the typographically correct way to align text with text. The icon is a
+        // 20×20 SF Symbol view — we align its visual center (centerY) to ~5px above the
+        // text baseline so the symbol's cap-mid lines up with the text's cap-mid.
+        // text.top = 16 visually centers a single line in a 50px row (Chinese caps included).
         NSLayoutConstraint.activate([
             iconView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 14),
-            iconView.topAnchor.constraint(equalTo: cell.topAnchor, constant: 14),
+            iconView.centerYAnchor.constraint(equalTo: text.firstBaselineAnchor, constant: -5),
             iconView.widthAnchor.constraint(equalToConstant: 20),
             iconView.heightAnchor.constraint(equalToConstant: 20),
 
             text.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 10),
             text.trailingAnchor.constraint(equalTo: time.leadingAnchor, constant: -10),
-            text.topAnchor.constraint(equalTo: cell.topAnchor, constant: 12),
-            text.bottomAnchor.constraint(lessThanOrEqualTo: sep.topAnchor, constant: -10),
+            text.topAnchor.constraint(equalTo: cell.topAnchor, constant: 16),
 
             time.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -14),
-            time.topAnchor.constraint(equalTo: cell.topAnchor, constant: 14),
+            time.firstBaselineAnchor.constraint(equalTo: text.firstBaselineAnchor),
             time.widthAnchor.constraint(lessThanOrEqualToConstant: 110),
 
             sep.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 44),
@@ -510,6 +550,46 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
             sep.bottomAnchor.constraint(equalTo: cell.bottomAnchor),
             sep.heightAnchor.constraint(equalToConstant: 0.5),
         ])
+
+        // --- Screenshot expanded preview ---
+        if isExpanded && record.type == .screenshot {
+            let preview = NSImageView()
+            preview.translatesAutoresizingMaskIntoConstraints = false
+            preview.imageScaling = .scaleProportionallyUpOrDown
+            preview.imageAlignment = .alignTopLeft
+            preview.wantsLayer = true
+            preview.layer?.cornerRadius = 6
+            preview.layer?.masksToBounds = true
+            preview.layer?.backgroundColor = NSColor(white: 0.06, alpha: 1.0).cgColor
+
+            if let path = record.imagePath, let img = NSImage(contentsOfFile: path) {
+                preview.image = img
+            }
+            cell.addSubview(preview)
+
+            // Place preview below the text row, full width inside cell padding.
+            NSLayoutConstraint.activate([
+                preview.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 44),
+                preview.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -14),
+                preview.topAnchor.constraint(equalTo: text.bottomAnchor, constant: 8),
+                preview.bottomAnchor.constraint(equalTo: sep.topAnchor, constant: -8),
+            ])
+
+            // "File missing" overlay if image failed to load.
+            if preview.image == nil {
+                let missing = NSTextField(labelWithString: "File missing on disk")
+                missing.font = .systemFont(ofSize: 12)
+                missing.textColor = NSColor(white: 0.55, alpha: 1.0)
+                missing.translatesAutoresizingMaskIntoConstraints = false
+                cell.addSubview(missing)
+                NSLayoutConstraint.activate([
+                    missing.centerXAnchor.constraint(equalTo: preview.centerXAnchor),
+                    missing.centerYAnchor.constraint(equalTo: preview.centerYAnchor),
+                ])
+            }
+        } else {
+            text.bottomAnchor.constraint(lessThanOrEqualTo: sep.topAnchor, constant: -10).isActive = true
+        }
 
         return cell
     }
@@ -582,15 +662,37 @@ class HistoryWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource
     private func copySelectedToClipboard() {
         let selected = tableView?.selectedRowIndexes ?? IndexSet()
         guard !selected.isEmpty else { return }
-        let texts = selected.compactMap { idx -> String? in
-            guard idx < records.count else { return nil }
-            return records[idx].copyText
-        }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(texts.joined(separator: "\n"), forType: .string)
-        log("History: copied \(texts.count) items")
 
-        countLabel?.stringValue = "Copied!"
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        var copiedLabel = "Copied!"
+
+        // Single-screenshot selection: put the image on the clipboard so it can be
+        // pasted into chat / mail / docs. (Selection is single-only by config.)
+        if selected.count == 1,
+           let idx = selected.first,
+           idx < records.count,
+           records[idx].type == .screenshot,
+           let path = records[idx].imagePath {
+            if let img = NSImage(contentsOfFile: path) {
+                pb.writeObjects([img])
+                log("History: copied screenshot \(path)")
+            } else {
+                copiedLabel = "File missing"
+                log("History: screenshot file missing — \(path)")
+            }
+        } else {
+            // Text records: join their copyText.
+            let texts = selected.compactMap { idx -> String? in
+                guard idx < records.count else { return nil }
+                let r = records[idx]
+                return r.type == .screenshot ? nil : r.copyText  // skip screenshots in mixed selection
+            }
+            pb.setString(texts.joined(separator: "\n"), forType: .string)
+            log("History: copied \(texts.count) items")
+        }
+
+        countLabel?.stringValue = copiedLabel
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.countLabel?.stringValue = "\(self?.records.count ?? 0) items"
         }
