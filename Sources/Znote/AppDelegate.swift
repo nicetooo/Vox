@@ -89,7 +89,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func hotkeyMenuLabel(for action: HotkeyAction) -> String {
         let b = Settings.shared.hotkeyBinding(for: action)
         let prefix: String
-        switch action.gesture {
+        switch b.gesture {
         case .tap: prefix = "Tap"
         case .hold: prefix = "Hold"
         case .doubleTap: prefix = "Double-tap"

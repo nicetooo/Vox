@@ -216,15 +216,17 @@ private class ModelRow: NSView {
     let modelName: String
     let displayName: String
     let sizeText: String
+    let noteText: String
     var isDownloaded: Bool = false
     var isActive: Bool = false
     var isSelected: Bool = false
     var onClick: ((ModelRow) -> Void)?
 
-    init(modelName: String, displayName: String, sizeText: String) {
+    init(modelName: String, displayName: String, sizeText: String, noteText: String) {
         self.modelName = modelName
         self.displayName = displayName
         self.sizeText = sizeText
+        self.noteText = noteText
         super.init(frame: .zero)
         wantsLayer = true
         updateAppearance()
@@ -258,7 +260,11 @@ private class ModelRow: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        // Status indicator
+        // Two-line layout: name + size on top row, note on bottom row.
+        let topY: CGFloat = bounds.height - 22  // baseline for top row
+        let botY: CGFloat = 8                   // baseline for bottom row
+
+        // Status indicator (aligned with name row)
         let statusColor: NSColor
         let statusText: String
         if isActive {
@@ -275,24 +281,33 @@ private class ModelRow: NSView {
             .foregroundColor: statusColor,
             .font: NSFont.systemFont(ofSize: 10)
         ]
-        statusText.draw(at: NSPoint(x: 12, y: (bounds.height - 14) / 2), withAttributes: statusAttrs)
+        statusText.draw(at: NSPoint(x: 12, y: topY + 3), withAttributes: statusAttrs)
 
         // Model name
-        let nameColor: NSColor = isActive ? .white : NSColor(white: 0.80, alpha: 1.0)
+        let nameColor: NSColor = isActive ? .white : NSColor(white: 0.85, alpha: 1.0)
         let nameAttrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: nameColor,
-            .font: NSFont.systemFont(ofSize: 13, weight: isActive ? .medium : .regular)
+            .font: NSFont.systemFont(ofSize: 13, weight: isActive ? .semibold : .medium)
         ]
-        displayName.draw(at: NSPoint(x: 30, y: (bounds.height - 17) / 2), withAttributes: nameAttrs)
+        displayName.draw(at: NSPoint(x: 30, y: topY), withAttributes: nameAttrs)
 
-        // Size on the right
+        // Size on the right of top row
         let sizeAttrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor(white: 0.40, alpha: 1.0),
+            .foregroundColor: NSColor(white: 0.45, alpha: 1.0),
             .font: NSFont.systemFont(ofSize: 11)
         ]
         let sizeSize = sizeText.size(withAttributes: sizeAttrs)
-        sizeText.draw(at: NSPoint(x: bounds.width - sizeSize.width - 12,
-                                   y: (bounds.height - sizeSize.height) / 2), withAttributes: sizeAttrs)
+        sizeText.draw(at: NSPoint(x: bounds.width - sizeSize.width - 12, y: topY + 1),
+                      withAttributes: sizeAttrs)
+
+        // Bottom row: pros/cons note (single line, light grey)
+        if !noteText.isEmpty {
+            let noteAttrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: NSColor(white: 0.50, alpha: 1.0),
+                .font: NSFont.systemFont(ofSize: 11)
+            ]
+            noteText.draw(at: NSPoint(x: 30, y: botY), withAttributes: noteAttrs)
+        }
     }
 }
 
@@ -316,7 +331,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
     private var loginToggle: DarkToggle?
     private var localKeyMonitor: Any?
     private var isDownloading = false
-    private var hotkeyPills: [HotkeyAction: (side: SegmentedPill, modifier: SegmentedPill)] = [:]
+    private var hotkeyPills: [HotkeyAction: (side: SegmentedPill, modifier: SegmentedPill, gesture: SegmentedPill?)] = [:]
     private var hotkeyConflictLabel: NSTextField?
 
     func showSettings() {
@@ -326,7 +341,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
             return
         }
 
-        let w: CGFloat = 480, h: CGFloat = 640
+        let w: CGFloat = 520, h: CGFloat = 640
 
         let p = SettingsPanel(
             contentRect: NSRect(x: 0, y: 0, width: w, height: h),
@@ -433,7 +448,11 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
     private func buildScrollContent(_ width: CGFloat) -> NSView {
         var y: CGFloat = 0
 
-        let container = NSView()
+        // FlippedView so y=0 is at the TOP and increasing y goes DOWN — matches
+        // the natural reading order of the section-by-section layout below.
+        // Without this, the FIRST section gets rendered at the BOTTOM of the
+        // scroll view (and the last single language item ends up alone at top).
+        let container = FlippedView()
 
         // === Languages ===
         y += addSectionHeader("Recognition Languages", at: y, in: container, width: width)
@@ -593,12 +612,17 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     private func addModelList(at y: CGFloat, in container: NSView, width: CGFloat) -> CGFloat {
-        let rowHeight: CGFloat = 36
+        let rowHeight: CGFloat = 52  // two-line layout: name + note
         let spacing: CGFloat = 4
         modelRows = []
 
         for (index, model) in Settings.popularModels.enumerated() {
-            let row = ModelRow(modelName: model.name, displayName: model.displayName, sizeText: model.size)
+            let row = ModelRow(
+                modelName: model.name,
+                displayName: model.displayName,
+                sizeText: model.size,
+                noteText: model.note
+            )
             row.frame = NSRect(x: 0, y: y + CGFloat(index) * (rowHeight + spacing), width: width, height: rowHeight)
             row.onClick = { [weak self] r in self?.modelRowClicked(r) }
             container.addSubview(row)
@@ -675,16 +699,20 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
     private func addHotkeyRows(at y: CGFloat, in container: NSView, width: CGFloat) -> CGFloat {
         let rowH: CGFloat = 34
         let spacing: CGFloat = 6
-        let labelW: CGFloat = 200
-        let sidePillW: CGFloat = 90
-        let modPillW: CGFloat = width - labelW - sidePillW - 20  // 2 gaps of 10
+        // Panel is 520, contentWidth = 480. Distribute to give each pill comfortable padding.
+        let labelW: CGFloat = 145    // "Translate Selection" at 12.5pt medium
+        let sidePillW: CGFloat = 90  // Left / Right — each segment ~45px, "Right" text ~30px → 15px pad
+        let modPillW: CGFloat = 80   // 3 symbols ⌘/⌥/⌃ — each ~27px
+        let gestureGap: CGFloat = 10
+        let gesturePillW: CGFloat = width - labelW - sidePillW - modPillW - (gestureGap * 3)
+        // → 480 - 145 - 90 - 80 - 30 = 135 (each gesture segment ~67px, "Double" text ~40px → 27px pad)
         hotkeyPills = [:]
 
         for (i, action) in HotkeyAction.allCases.enumerated() {
             let rowY = y + CGFloat(i) * (rowH + spacing)
             let binding = Settings.shared.hotkeyBinding(for: action)
 
-            let label = NSTextField(labelWithString: "\(action.displayName)  ·  \(action.gesture.displayName)")
+            let label = NSTextField(labelWithString: action.displayName)
             label.font = .systemFont(ofSize: 12.5, weight: .medium)
             label.textColor = NSColor(white: 0.82, alpha: 1.0)
             label.frame = NSRect(x: 0, y: rowY + (rowH - 18) / 2, width: labelW, height: 18)
@@ -714,7 +742,39 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
             }
             container.addSubview(modPill)
 
-            hotkeyPills[action] = (sidePill, modPill)
+            // Gesture: a SegmentedPill if 2+ options, otherwise a static label showing the locked gesture.
+            let gestureX = labelW + sidePillW + modPillW + (gestureGap * 3)
+            var gesturePill: SegmentedPill? = nil
+            if action.allowedGestures.count > 1 {
+                // Use shortened labels so they fit narrow pills.
+                let gOpts = action.allowedGestures.map { g -> String in
+                    switch g {
+                    case .tap: return "Tap"
+                    case .hold: return "Hold"
+                    case .doubleTap: return "Double"
+                    }
+                }
+                let gIdx = action.allowedGestures.firstIndex(of: binding.gesture) ?? 0
+                let gPill = SegmentedPill(options: gOpts, selectedIndex: gIdx)
+                gPill.frame = NSRect(x: gestureX, y: rowY, width: gesturePillW, height: rowH)
+                gPill.onChange = { [weak self] idx in
+                    var b = Settings.shared.hotkeyBinding(for: action)
+                    b.gesture = action.allowedGestures[idx]
+                    Settings.shared.setHotkeyBinding(b, for: action)
+                    self?.hotkeyBindingChanged()
+                }
+                container.addSubview(gPill)
+                gesturePill = gPill
+            } else {
+                let lockedLabel = NSTextField(labelWithString: binding.gesture.displayName)
+                lockedLabel.font = .systemFont(ofSize: 12, weight: .medium)
+                lockedLabel.textColor = NSColor(white: 0.55, alpha: 1.0)
+                lockedLabel.alignment = .center
+                lockedLabel.frame = NSRect(x: gestureX, y: rowY + (rowH - 16) / 2, width: gesturePillW, height: 16)
+                container.addSubview(lockedLabel)
+            }
+
+            hotkeyPills[action] = (sidePill, modPill, gesturePill)
         }
 
         return CGFloat(HotkeyAction.allCases.count) * (rowH + spacing)
@@ -737,10 +797,14 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private func resetHotkeysClicked() {
         Settings.shared.resetHotkeys()
-        for (action, pair) in hotkeyPills {
+        for (action, pills) in hotkeyPills {
             let b = Settings.shared.hotkeyBinding(for: action)
-            pair.side.setSelectedIndex(HotkeySide.allCases.firstIndex(of: b.side) ?? 0)
-            pair.modifier.setSelectedIndex(HotkeyModifier.allCases.firstIndex(of: b.modifier) ?? 0)
+            pills.side.setSelectedIndex(HotkeySide.allCases.firstIndex(of: b.side) ?? 0)
+            pills.modifier.setSelectedIndex(HotkeyModifier.allCases.firstIndex(of: b.modifier) ?? 0)
+            if let gPill = pills.gesture,
+               let gIdx = action.allowedGestures.firstIndex(of: b.gesture) {
+                gPill.setSelectedIndex(gIdx)
+            }
         }
         hotkeyBindingChanged()
     }

@@ -7,6 +7,7 @@ struct WhisperModelInfo {
     let name: String         // WhisperKit model variant name
     let displayName: String  // User-friendly name
     let size: String         // Approximate download size
+    let note: String         // One-line pros/cons summary shown under the name
 }
 
 // MARK: - Settings (UserDefaults backed)
@@ -16,34 +17,52 @@ class Settings {
     private let defaults = UserDefaults.standard
 
     // MARK: - Popular Whisper Models (WhisperKit CoreML format)
+    //
+    // Curated list — older / smaller variants (large-v2, distil-large-v3, medium,
+    // base, tiny) have been removed because they're either superseded by Turbo or
+    // too low-quality to be useful (especially for non-English).
 
     static let popularModels: [WhisperModelInfo] = [
-        WhisperModelInfo(name: "large-v3", displayName: "Large V3 (best quality)", size: "~3 GB"),
-        WhisperModelInfo(name: "large-v2", displayName: "Large V2", size: "~3 GB"),
-        WhisperModelInfo(name: "distil-large-v3", displayName: "Distil Large V3 (fast+good)", size: "~1.5 GB"),
-        WhisperModelInfo(name: "medium", displayName: "Medium", size: "~1.5 GB"),
-        WhisperModelInfo(name: "small", displayName: "Small", size: "~500 MB"),
-        WhisperModelInfo(name: "base", displayName: "Base", size: "~150 MB"),
-        WhisperModelInfo(name: "tiny", displayName: "Tiny (fastest)", size: "~80 MB"),
+        WhisperModelInfo(
+            name: "large-v3",
+            displayName: "Large V3",
+            size: "~3 GB",
+            note: "Best quality · multilingual · proper punctuation · ~1× realtime"
+        ),
+        WhisperModelInfo(
+            name: "large-v3-v20240930",
+            displayName: "Large V3 Turbo",
+            size: "~1.6 GB",
+            note: "~8× faster · multilingual · weaker punctuation/casing"
+        ),
+        WhisperModelInfo(
+            name: "small",
+            displayName: "Small",
+            size: "~500 MB",
+            note: "Lightweight · English-mainly · Chinese accuracy ~25% WER"
+        ),
     ]
 
     // MARK: - Available Languages
 
+    // Ordered by popularity for typical Znote users: English first (global
+    // lingua franca + most Whisper users), then Chinese family (Simplified +
+    // Traditional kept adjacent), then other CJK, then European, then others.
     static let availableLanguages: [LanguageOption] = [
+        LanguageOption(code: "en", name: "English"),
         LanguageOption(code: "zh-Hans", name: "简体中文 (Simplified)"),
         LanguageOption(code: "zh-Hant", name: "繁體中文 (Traditional)"),
-        LanguageOption(code: "en", name: "English"),
         LanguageOption(code: "ja", name: "日本語 (Japanese)"),
         LanguageOption(code: "ko", name: "한국어 (Korean)"),
-        LanguageOption(code: "yue", name: "粵語 (Cantonese)"),
         LanguageOption(code: "es", name: "Español (Spanish)"),
         LanguageOption(code: "fr", name: "Français (French)"),
         LanguageOption(code: "de", name: "Deutsch (German)"),
-        LanguageOption(code: "ru", name: "Русский (Russian)"),
-        LanguageOption(code: "pt", name: "Português (Portuguese)"),
         LanguageOption(code: "it", name: "Italiano (Italian)"),
+        LanguageOption(code: "pt", name: "Português (Portuguese)"),
+        LanguageOption(code: "ru", name: "Русский (Russian)"),
         LanguageOption(code: "ar", name: "العربية (Arabic)"),
         LanguageOption(code: "hi", name: "हिन्दी (Hindi)"),
+        LanguageOption(code: "yue", name: "粵語 (Cantonese)"),
         LanguageOption(code: "th", name: "ภาษาไทย (Thai)"),
         LanguageOption(code: "vi", name: "Tiếng Việt (Vietnamese)"),
         LanguageOption(code: "id", name: "Bahasa Indonesia"),
@@ -90,8 +109,12 @@ class Settings {
             if stored.contains("mlx-community") || stored.isEmpty {
                 return "large-v3"
             }
-            // Remove large-v3-turbo (not available in WhisperKit)
-            if stored == "large-v3-turbo" {
+            // Migrate from removed model variants (large-v2 / distil-large-v3 /
+            // medium / base / tiny / etc.) → fall back to large-v3 so the user
+            // doesn't get stuck on an option that no longer appears in Settings.
+            let supported = Set(Settings.popularModels.map { $0.name })
+            if !supported.contains(stored) {
+                log("Settings: stored model '\(stored)' no longer offered — migrating to large-v3")
                 return "large-v3"
             }
             return stored
@@ -147,7 +170,7 @@ class Settings {
             // Check it contains CoreML model files
             if let contents = try? fm.contentsOfDirectory(atPath: dirPath.path),
                contents.contains(where: { $0.hasSuffix(".mlmodelc") || $0 == "config.json" }) {
-                // Extract variant: "openai_whisper-large-v3-turbo" → "large-v3-turbo"
+                // Extract variant: "openai_whisper-large-v3" → "large-v3"
                 let variant = entry
                     .replacingOccurrences(of: "openai_whisper-", with: "")
                     .replacingOccurrences(of: "distil-whisper_distil-", with: "distil-")
@@ -295,7 +318,7 @@ enum HotkeyModifier: String, CaseIterable {
     }
 }
 
-enum HotkeyGesture: String {
+enum HotkeyGesture: String, CaseIterable {
     case tap, hold, doubleTap
     var displayName: String {
         switch self {
@@ -318,8 +341,8 @@ enum HotkeyAction: String, CaseIterable {
         }
     }
 
-    /// Gesture is fixed per action (strong semantic coupling).
-    var gesture: HotkeyGesture {
+    /// Default gesture (used when user hasn't customized it).
+    var defaultGesture: HotkeyGesture {
         switch self {
         case .voiceInput: return .hold
         case .toggleHistory, .translate: return .tap
@@ -327,19 +350,31 @@ enum HotkeyAction: String, CaseIterable {
         }
     }
 
+    /// Gestures the user may pick from. voiceInput is locked to .hold; others
+    /// may swap freely between tap and double-tap.
+    var allowedGestures: [HotkeyGesture] {
+        switch self {
+        case .voiceInput: return [.hold]
+        case .toggleHistory, .translate, .screenshot: return [.tap, .doubleTap]
+        }
+    }
+
     var defaultBinding: HotkeyBinding {
+        let base: HotkeyBinding
         switch self {
         case .voiceInput, .toggleHistory:
-            return HotkeyBinding(side: .right, modifier: .cmd)
+            base = HotkeyBinding(side: .right, modifier: .cmd, gesture: defaultGesture)
         case .translate, .screenshot:
-            return HotkeyBinding(side: .right, modifier: .option)
+            base = HotkeyBinding(side: .right, modifier: .option, gesture: defaultGesture)
         }
+        return base
     }
 }
 
 struct HotkeyBinding: Equatable {
     var side: HotkeySide
     var modifier: HotkeyModifier
+    var gesture: HotkeyGesture
 
     var displayString: String { "\(side.displayName) \(modifier.symbol)" }
 }
@@ -348,16 +383,22 @@ extension Settings {
     func hotkeyBinding(for action: HotkeyAction) -> HotkeyBinding {
         let sideKey = "hotkey.\(action.rawValue).side"
         let modKey = "hotkey.\(action.rawValue).modifier"
+        let gestKey = "hotkey.\(action.rawValue).gesture"
         let side = UserDefaults.standard.string(forKey: sideKey).flatMap(HotkeySide.init(rawValue:))
             ?? action.defaultBinding.side
         let modifier = UserDefaults.standard.string(forKey: modKey).flatMap(HotkeyModifier.init(rawValue:))
             ?? action.defaultBinding.modifier
-        return HotkeyBinding(side: side, modifier: modifier)
+        let storedGesture = UserDefaults.standard.string(forKey: gestKey).flatMap(HotkeyGesture.init(rawValue:))
+        // Clamp to allowedGestures so an old/invalid stored value can't break the action.
+        let gesture = (storedGesture.map { action.allowedGestures.contains($0) ? $0 : action.defaultGesture })
+            ?? action.defaultGesture
+        return HotkeyBinding(side: side, modifier: modifier, gesture: gesture)
     }
 
     func setHotkeyBinding(_ binding: HotkeyBinding, for action: HotkeyAction) {
         UserDefaults.standard.set(binding.side.rawValue, forKey: "hotkey.\(action.rawValue).side")
         UserDefaults.standard.set(binding.modifier.rawValue, forKey: "hotkey.\(action.rawValue).modifier")
+        UserDefaults.standard.set(binding.gesture.rawValue, forKey: "hotkey.\(action.rawValue).gesture")
     }
 
     func resetHotkeys() {
@@ -373,7 +414,11 @@ extension Settings {
         for i in 0..<actions.count {
             for j in (i + 1)..<actions.count {
                 let a = actions[i], b = actions[j]
-                if hotkeyBinding(for: a) == hotkeyBinding(for: b) && a.gesture == b.gesture {
+                let ba = hotkeyBinding(for: a)
+                let bb = hotkeyBinding(for: b)
+                if ba == bb {
+                    // HotkeyBinding's Equatable now includes gesture, so this implies
+                    // same side + modifier + gesture.
                     conflicts.append((a, b))
                 }
             }

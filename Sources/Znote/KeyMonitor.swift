@@ -44,7 +44,15 @@ class KeyMonitor {
         var tapTimer: DispatchSourceTimer?
     }
 
-    private var bindings: [PhysicalKey: [HotkeyAction]] = [:]
+    /// Per physical key, the actions bound to it together with the user-configured
+    /// gesture that should fire each action. Multiple actions can share a key as
+    /// long as their gestures differ (e.g. tap → translate, double-tap → screenshot
+    /// both bound to Right ⌥).
+    private struct BoundAction {
+        let action: HotkeyAction
+        let gesture: HotkeyGesture
+    }
+    private var bindings: [PhysicalKey: [BoundAction]] = [:]
     private var states: [PhysicalKey: KeyState] = [:]
 
     // MARK: - Permission detection
@@ -103,7 +111,7 @@ class KeyMonitor {
         for action in HotkeyAction.allCases {
             let b = Settings.shared.hotkeyBinding(for: action)
             let key = PhysicalKey(side: b.side, modifier: b.modifier)
-            bindings[key, default: []].append(action)
+            bindings[key, default: []].append(BoundAction(action: action, gesture: b.gesture))
             if states[key] == nil { states[key] = KeyState() }
         }
         log("KeyMonitor: bindings reloaded — \(bindings.count) physical keys, \(HotkeyAction.allCases.count) actions")
@@ -161,7 +169,7 @@ class KeyMonitor {
     }
 
     private func handleModifier(_ physKey: PhysicalKey, pressed: Bool) {
-        guard let actions = bindings[physKey], let state = states[physKey] else { return }
+        guard let entries = bindings[physKey], let state = states[physKey] else { return }
 
         if pressed && !state.isDown {
             state.isDown = true
@@ -169,16 +177,16 @@ class KeyMonitor {
             state.holdFired = false
             state.otherKeyPressed = false
 
-            // If this key has a .hold action, arm the hold timer.
-            if let holdAction = actions.first(where: { $0.gesture == .hold }) {
+            // If this key has a .hold-gesture action, arm the hold timer.
+            if let holdEntry = entries.first(where: { $0.gesture == .hold }) {
                 state.holdTimer?.cancel()
                 let timer = DispatchSource.makeTimerSource(queue: .main)
                 timer.schedule(deadline: .now() + holdThreshold)
                 timer.setEventHandler { [weak self, weak state] in
                     guard let state = state, state.isDown else { return }
                     state.holdFired = true
-                    log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) hold → \(holdAction.displayName)")
-                    self?.fireHoldDown(holdAction)
+                    log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) hold → \(holdEntry.action.displayName)")
+                    self?.fireHoldDown(holdEntry.action)
                 }
                 timer.resume()
                 state.holdTimer = timer
@@ -192,8 +200,8 @@ class KeyMonitor {
             if state.holdFired {
                 // Was holding — release the hold action.
                 state.holdFired = false
-                if let holdAction = actions.first(where: { $0.gesture == .hold }) {
-                    fireHoldUp(holdAction)
+                if let holdEntry = entries.first(where: { $0.gesture == .hold }) {
+                    fireHoldUp(holdEntry.action)
                 }
                 return
             }
@@ -202,10 +210,10 @@ class KeyMonitor {
             let duration = Date().timeIntervalSince(state.downTime ?? .distantPast)
             guard duration < tapThreshold, !state.otherKeyPressed else { return }
 
-            let tapAction = actions.first { $0.gesture == .tap }
-            let doubleTapAction = actions.first { $0.gesture == .doubleTap }
+            let tapEntry = entries.first { $0.gesture == .tap }
+            let doubleTapEntry = entries.first { $0.gesture == .doubleTap }
 
-            if let doubleAction = doubleTapAction {
+            if let doubleEntry = doubleTapEntry {
                 // Need to distinguish tap from first-half of double-tap.
                 if let last = state.lastTapTime,
                    Date().timeIntervalSince(last) < doubleTapWindow {
@@ -213,8 +221,8 @@ class KeyMonitor {
                     state.tapTimer?.cancel()
                     state.tapTimer = nil
                     state.lastTapTime = nil
-                    log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) double-tap → \(doubleAction.displayName)")
-                    fireTap(doubleAction)
+                    log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) double-tap → \(doubleEntry.action.displayName)")
+                    fireTap(doubleEntry.action)
                 } else {
                     // First tap — wait to see if a second follows.
                     state.lastTapTime = Date()
@@ -224,18 +232,18 @@ class KeyMonitor {
                     timer.setEventHandler { [weak self, weak state] in
                         state?.lastTapTime = nil
                         state?.tapTimer = nil
-                        if let tap = tapAction {
-                            log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) tap → \(tap.displayName)")
-                            self?.fireTap(tap)
+                        if let tap = tapEntry {
+                            log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) tap → \(tap.action.displayName)")
+                            self?.fireTap(tap.action)
                         }
                     }
                     timer.resume()
                     state.tapTimer = timer
                 }
-            } else if let tap = tapAction {
+            } else if let tap = tapEntry {
                 // No double-tap bound on this key — tap fires immediately.
-                log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) tap → \(tap.displayName)")
-                fireTap(tap)
+                log("KeyMonitor: \(physKey.side.displayName) \(physKey.modifier.symbol) tap → \(tap.action.displayName)")
+                fireTap(tap.action)
             }
         }
     }
